@@ -1,0 +1,15 @@
+# Visual Studio
+.vs/
+*.opendb
+*.db
+*.suo
+*.tlog
+*.obj
+*.ilk
+*.pdb
+*.idb
+*.lastbuildstate
+*.recipe
+*.pch
+*.log
+*.dll
