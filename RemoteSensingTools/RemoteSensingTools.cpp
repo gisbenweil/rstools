@@ -158,11 +158,17 @@ static CombinedBoundsResult computeCombinedBounds(const ImageInfo* left, const I
     res.maxX = std::max(lmaxX, rmaxX);
     res.minY = std::min(lminY, rminY);
     res.maxY = std::max(lmaxY, rmaxY);
+    std::cout << "合并范围：" << res.minX << ", " << res.maxX << ", " << res.minY << ", " << res.maxY << std::endl;
 
     // 构建合并画布的 GeoTransform：左上角为 (minX, maxY)
-    GeoTransform gt = left->geoTransform;
+    GeoTransform gt;// = left->geoTransform;
     gt.xOrigin = res.minX;
     gt.yOrigin = res.maxY;
+    gt.pixelHeight = left->geoTransform.pixelHeight;
+    gt.pixelWidth = left->geoTransform.pixelWidth;
+	gt.rotationX = left->geoTransform.rotationX;
+    gt.rotationY = left->geoTransform.rotationY;
+
     // 保持 pixelWidth, pixelHeight, rotationX/Y 与 left 一致（已在调用处要求一致）
     res.combinedGT = gt;
 

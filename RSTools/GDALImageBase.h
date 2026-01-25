@@ -76,7 +76,7 @@ struct GeoTransform {
 	 */
 	bool geoToPixel(double geoX, double geoY, double& pixelX, double& pixelY) const {
 		double denominator = pixelWidth * pixelHeight - rotationX * rotationY;
-		if (std::abs(denominator) < 1e-10) {
+		if (std::abs(denominator) < 1e-16) {
 			return false;
 		}
 
@@ -92,6 +92,9 @@ struct GeoTransform {
 		geoX = xOrigin + pixelX * pixelWidth + pixelY * rotationY;
 		geoY = yOrigin + pixelX * rotationX + pixelY * pixelHeight;
 	}
+
+
+    
 };
 
 /**
