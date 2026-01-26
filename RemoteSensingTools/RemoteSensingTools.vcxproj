@@ -157,6 +157,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="optflowoffsets.cpp" />
     <ClCompile Include="RemoteSensingTools.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -165,7 +166,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="optflow.h" />
+    <ClInclude Include="optflowoffset.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

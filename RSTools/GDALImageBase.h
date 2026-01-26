@@ -15,7 +15,7 @@
 /**
  * @brief 遥感影像数据类型枚举
  */
-enum class ImageDataType {
+enum  ImageDataType {
 	Unknown = GDT_Unknown,
 	Byte = GDT_Byte,           // 8位无符号整数
 	UInt16 = GDT_UInt16,       // 16位无符号整数
