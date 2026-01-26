@@ -45,7 +45,6 @@ ImageBlockReader::ImageBlockReader(const std::string& path, int blockWidth, int 
 	if (range && range->isValid()) {
 		range_.x = range->x;
 		range_.y = range->y;
-		// 确保不超出影像
 		range_.width = range->width;
 		range_.height = range->height;
 		if (range_.width <= 0 || range_.height <= 0) {

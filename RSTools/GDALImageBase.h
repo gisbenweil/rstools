@@ -161,8 +161,8 @@ struct ReadArea {
 
 			area.x = static_cast<int>(std::floor(px1 / scale));
 			area.y = static_cast<int>(std::floor(py1 / scale));
-			area.width = static_cast<int>(std::ceil(px2 / scale)) - area.x;
-			area.height = static_cast<int>(std::ceil(py2 / scale)) - area.y;
+			area.width = static_cast<int>(std::ceil(px2 - px1 / scale)) ;
+			area.height = static_cast<int>(std::ceil(py2 - py1/ scale));
 			area.level = level;
 
 			// 确保区域在有效范围内
