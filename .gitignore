@@ -13,3 +13,4 @@
 *.pch
 *.log
 *.dll
+*.exp
