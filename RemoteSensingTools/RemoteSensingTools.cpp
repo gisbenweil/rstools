@@ -7,6 +7,8 @@
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
+#include <sstream>
 
 #include "GDALImageBase.h"
 #include "GDALImageReader.h"
@@ -17,6 +19,31 @@
 #include "optflowoffsets.h"
 
 using namespace cv;
+
+// 双线性采样（输入为 single-channel CV_32F 图像）
+static float bilinearSample(const cv::Mat& img, double x, double y)
+{
+    if (x < 0 || y < 0 || x >= img.cols - 1 || y >= img.rows - 1) {
+        // 边界外直接返回 0
+        int ix = static_cast<int>(std::floor(x + 0.5));
+        int iy = static_cast<int>(std::floor(y + 0.5));
+        if (ix >= 0 && iy >= 0 && ix < img.cols && iy < img.rows) return img.at<float>(iy, ix);
+        return 0.0f;
+    }
+    int x0 = static_cast<int>(std::floor(x));
+    int y0 = static_cast<int>(std::floor(y));
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    float dx = static_cast<float>(x - x0);
+    float dy = static_cast<float>(y - y0);
+    float v00 = img.at<float>(y0, x0);
+    float v10 = img.at<float>(y0, x1);
+    float v01 = img.at<float>(y1, x0);
+    float v11 = img.at<float>(y1, x1);
+    float v0 = v00 * (1.0f - dx) + v10 * dx;
+    float v1 = v01 * (1.0f - dx) + v11 * dx;
+    return v0 * (1.0f - dy) + v1 * dy;
+}
 
 Mat convertTo8Bit(const void* data, int width, int height,
     ImageDataType dataType,
@@ -221,8 +248,8 @@ int main(int argc, char** argv)
 
     //std::string lpath = "F:/变形测试/磐安县/磐安县.img";
     //std::string rpath = "F:/变形测试/磐安县.img";
-    std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
-    std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
+    std::string lpath = "G:/变形测试/磐安县_clip_before1.tif";
+    std::string rpath = "G:/变形测试/磐安县_clip_after1.tif";
    
     // 初始化 GDAL
     RSTools_Initialize();
@@ -326,7 +353,7 @@ int main(int argc, char** argv)
         std::cout << "浮点偏移: (" << cb.rightOffsetXf << ", " << cb.rightOffsetYf << ")\n";
         std::cout << "整数偏移: (" << cb.rightOffsetXi << ", " << cb.rightOffsetYi << ")\n";
         // 输出文件路径
-    std::string outOffsetPath = "F:/变形测试/offsets.tif";
+    std::string outOffsetPath = "G:/变形测试/offsets.tif";
 
     ImageBlockReader rreader(rpath, 512, 512, 16, &rightArea);
     ImageBlockReader lreader(lpath, 512, 512, 16, &leftArea);
@@ -347,6 +374,26 @@ int main(int argc, char** argv)
     std::vector<std::vector<cv::Point2f>> currPtsPerBlock(totalBlocks);
     std::vector<std::vector<uchar>> statusPerBlock(totalBlocks);
 
+    // --- 进度信息准备 ---
+    const int readTileW = 512; // 与 ImageBlockReader 构造一致
+    const int readTileH = 512;
+    int tilesX = static_cast<int>(std::ceil(leftArea.width / static_cast<double>(readTileW)));
+    int tilesY = static_cast<int>(std::ceil(leftArea.height / static_cast<double>(readTileH)));
+    int totalTiles = std::max(1, tilesX) * std::max(1, tilesY);
+    int processedTiles = 0;
+    auto startTime = std::chrono::steady_clock::now();
+    auto formatDuration = [](double secs)->std::string {
+        int s = static_cast<int>(std::round(std::max(0.0, secs)));
+        int h = s / 3600;
+        int m = (s % 3600) / 60;
+        int ss = s % 60;
+        std::ostringstream oss;
+        if (h > 0) oss << h << "h";
+        if (m > 0 || h > 0) oss << m << "m";
+        oss << ss << "s";
+        return oss.str();
+    };
+
     while (true) {
         ReadResult* rres = nullptr;
         ReadResult* lres = nullptr;
@@ -363,6 +410,22 @@ int main(int argc, char** argv)
             if (rres) RSTools_DestroyReadResult(rres);
             if (lres) RSTools_DestroyReadResult(lres);
             continue;
+        }
+
+        // 计数并输出进度（按每10块或结束时刷新）
+        ++processedTiles;
+        if (processedTiles % 10 == 0 || processedTiles == totalTiles) {
+            auto now = std::chrono::steady_clock::now();
+            double elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - startTime).count();
+            double perTile = (processedTiles > 0) ? (elapsed / processedTiles) : 0.0;
+            double remaining = std::max(0, totalTiles - processedTiles);
+            double eta = perTile * remaining;
+            double percent = processedTiles * 100.0 / totalTiles;
+            std::cout << "\r处理进度: " << processedTiles << "/" << totalTiles
+                << " (" << std::fixed << std::setprecision(1) << percent << "%)"
+                << " 已用: " << formatDuration(elapsed)
+                << " ETA: " << formatDuration(eta) << "    " << std::flush;
+            if (processedTiles == totalTiles) std::cout << std::endl;
         }
 
         // 仅使用第一波段进行匹配（若无波段或数据异常则跳过）
@@ -453,6 +516,119 @@ int main(int argc, char** argv)
             std::cout << "生成密集偏移 GeoTIFF 成功: " << outOffsetPath << std::endl;
         }
     }
+        // ----- 根据前影像与偏移反算生成后影像 -----
+        std::string reconPath = "G:/变形测试/reconstructed.tif";
+
+        // 将前影像整张读入内存（按 band 存为 CV_32F）
+        std::vector<cv::Mat> leftBandsF;
+        leftBandsF.resize(linfo->bands);
+        for (int b = 0; b < linfo->bands; ++b) {
+            leftBandsF[b] = cv::Mat::zeros(linfo->height, linfo->width, CV_32F);
+        }
+
+        // 读取整个左影像（使用 ImageBlockReader 遍历）
+        {
+            ImageBlockReader fullLeftReader(lpath, 512, 512, 16, nullptr);
+            while (true) {
+                ReadResult* fres = nullptr;
+                BlockSpec fspec;
+                if (!fullLeftReader.next(&fres, &fspec)) break;
+                if (!fres) continue;
+                for (int b = 0; b < fres->bands && b < static_cast<int>(leftBandsF.size()); ++b) {
+                    cv::Mat patch = convertToCVMat(*fres, b);
+                    cv::Mat patchF;
+                    patch.convertTo(patchF, CV_32F);
+                    // copy into full image
+                    int sx = fspec.readX;
+                    int sy = fspec.readY;
+                    int pw = patchF.cols;
+                    int ph = patchF.rows;
+
+                    int dstX = std::max(0, sx);
+                    int dstY = std::max(0, sy);
+                    int srcX = dstX - sx; // 如果 sx < 0，则从 patchF 的偏移开始
+                    int srcY = dstY - sy;
+
+                    int copyW = std::min(pw - srcX, leftBandsF[b].cols - dstX);
+                    int copyH = std::min(ph - srcY, leftBandsF[b].rows - dstY);
+
+                    if (copyW > 0 && copyH > 0) {
+                        cv::Rect srcRect(srcX, srcY, copyW, copyH);
+                        cv::Rect dstRect(dstX, dstY, copyW, copyH);
+                        patchF(srcRect).copyTo(leftBandsF[b](dstRect));
+                    }
+                }
+                RSTools_DestroyReadResult(fres);
+            }
+        }
+
+        // 准备输出 writer（输出浮点波段）
+        ImageBlockWriter reconWriter(reconPath, cb.combinedWidth, cb.combinedHeight, linfo->bands, cb.combinedGT, linfo->projection);
+        if (!reconWriter.isOpen()) {
+            std::cerr << "无法创建反算输出文件: " << reconPath << std::endl;
+        } else {
+            // 读取偏移文件块，按块反算写入
+            ImageBlockReader offReader(outOffsetPath, 512, 512, 16, nullptr);
+            while (true) {
+                ReadResult* ores = nullptr;
+                BlockSpec ospec;
+                if (!offReader.next(&ores, &ospec)) break;
+                if (!ores) continue;
+                int ow = ores->width;
+                int oh = ores->height;
+                // 获取偏移两波段（假设 band0 = dx, band1 = dy）
+                std::vector<float> dxbuf(ow * oh, 0.0f);
+                std::vector<float> dybuf(ow * oh, 0.0f);
+                // copy to float buffers
+                const float* pdx = ores->getBandData<float>(0);
+                const float* pdy = ores->getBandData<float>(1);
+                if (pdx && pdy) {
+                    for (int i = 0; i < ow * oh; ++i) {
+                        dxbuf[i] = pdx[i];
+                        dybuf[i] = pdy[i];
+                    }
+                }
+
+                // 准备输出每波段缓冲
+                std::vector<std::vector<float>> outBufs(linfo->bands);
+                for (int b = 0; b < linfo->bands; ++b) outBufs[b].assign(ow * oh, 0.0f);
+
+                // 对每个像素进行反算：右图(u,v) -> 左图采样位置 = (u - dx, v - dy)
+                for (int yy = 0; yy < oh; ++yy) {
+                    for (int xx = 0; xx < ow; ++xx) {
+                        int idx = yy * ow + xx;
+                        double combinedX = static_cast<double>(ospec.readX + xx);
+                        double combinedY = static_cast<double>(ospec.readY + yy);
+                        float dxv = dxbuf[idx];
+                        float dyv = dybuf[idx];
+                        if (!std::isfinite(dxv) || !std::isfinite(dyv)) continue;
+                        double srcCombinedX = combinedX - static_cast<double>(dxv);
+                        double srcCombinedY = combinedY - static_cast<double>(dyv);
+                        // 转为左影像像素坐标
+                        double srcXInLeft = srcCombinedX - cb.leftOffsetXf;
+                        double srcYInLeft = srcCombinedY - cb.leftOffsetYf;
+                        // 注意 leftBandsF 的坐标系是像素坐标 (0..width-1,0..height-1)
+                        if (srcXInLeft < 0.0 || srcYInLeft < 0.0 || srcXInLeft >= linfo->width || srcYInLeft >= linfo->height) continue;
+                        for (int b = 0; b < linfo->bands; ++b) {
+                            float sval = bilinearSample(leftBandsF[b], srcXInLeft, srcYInLeft);
+                            outBufs[b][idx] = sval;
+                        }
+                    }
+                }
+
+                // 写块
+                std::vector<const float*> ptrs(linfo->bands);
+                std::vector<std::vector<float>> tmp = outBufs; // ensure storage
+                for (int b = 0; b < linfo->bands; ++b) ptrs[b] = tmp[b].data();
+                if (!reconWriter.writeBlock(ospec.readX, ospec.readY, ow, oh, ptrs.data())) {
+                    std::cerr << "写入反算块失败: " << ospec.readX << "," << ospec.readY << std::endl;
+                }
+
+                RSTools_DestroyReadResult(ores);
+            }
+
+            std::cout << "反算重建后影像成功: " << reconPath << std::endl;
+        }
     }
 
     // 释放 info（由 DLL 分配，必须调用对应销毁接口）
