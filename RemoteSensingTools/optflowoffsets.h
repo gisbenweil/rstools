@@ -9,112 +9,10 @@
 #include <opencv2/video/tracking.hpp>
 #include <vector>
 #include <chrono>
-
-
-
-
-
-
-//class OpticalFlowTracker {
-//private:
-//    std::vector<cv::Point2f> l_points, r_points;
-//    cv::Mat l_gray, r_gray;
-//    cv::Size winSize;
-//    int maxLevel;
-//    cv::TermCriteria criteria;
-//
-//public:
-//    OpticalFlowTracker()
-//        : winSize(21, 21),
-//        maxLevel(3),
-//        criteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 30, 0.01) {
-//    }
-//
-//    void processFrame(cv::Mat& frame) {
-//        cv::cvtColor(frame, curr_gray, cv::COLOR_BGR2GRAY);
-//
-//        if (!prev_gray.empty()) {
-//            // 计算光流
-//            std::vector<uchar> status;
-//            std::vector<float> err;
-//
-//            cv::calcOpticalFlowPyrLK(prev_gray, curr_gray,
-//                prev_points, curr_points,
-//                status, err,
-//                winSize, maxLevel,
-//                criteria);
-//
-//            // 筛选好的跟踪点
-//            std::vector<cv::Point2f> good_prev, good_curr;
-//            for (size_t i = 0; i < status.size(); i++) {
-//                if (status[i] == 1 && err[i] < 20.0) {
-//                    good_prev.push_back(prev_points[i]);
-//                    good_curr.push_back(curr_points[i]);
-//                }
-//            }
-//
-//            // 绘制光流
-//            drawOpticalFlow(frame, good_prev, good_curr);
-//
-//            // 更新点为下一帧准备
-//            prev_points = good_curr;
-//
-//            // 如果点太少，重新检测
-//            if (prev_points.size() < 20) {
-//                detectFeatures(curr_gray);
-//            }
-//        }
-//        else {
-//            // 第一帧，检测特征点
-//            detectFeatures(curr_gray);
-//        }
-//
-//        // 更新前一帧
-//        curr_gray.copyTo(prev_gray);
-//    }
-//
-//private:
-//    void detectFeatures(const cv::Mat& gray) {
-//
-//        cv::Ptr<cv::ORB> orb = cv::ORB::create(500);
-//        std::vector<cv::KeyPoint> kps1, kps2;
-//        cv::Mat desc1, desc2;
-//
-//        orb->detectAndCompute(l_gray, cv::noArray(), kps1, desc1);
-//        orb->detectAndCompute(r_gray, cv::noArray(), kps2, desc2);
-//
-//        // 转换为Point2f用于LK
-//        std::vector<cv::Point2f> points1, points2;
-//        cv::KeyPoint::convert(kps1, points1);
-//        cv::KeyPoint::convert(kps2, points2);
-//
-//        // 使用LK光流精炼匹配
-//        std::vector<uchar> status;
-//        std::vector<float> err;
-//        cv::calcOpticalFlowPyrLK(frame1, frame2, points1, points2,
-//            status, err);
-//        prev_points.clear();
-//        cv::goodFeaturesToTrack(gray, prev_points,
-//            100, 0.3, 7, cv::Mat(), 7, false, 0.04);
-//    }
-//
-//    void drawOpticalFlow(cv::Mat& frame,
-//        const std::vector<cv::Point2f>& prev,
-//        const std::vector<cv::Point2f>& curr) {
-//        for (size_t i = 0; i < prev.size(); i++) {
-//            // 绘制轨迹线
-//            cv::arrowedLine(frame, prev[i], curr[i],
-//                cv::Scalar(0, 255, 0), 2, 8, 0, 0.3);
-//
-//            // 绘制当前点
-//            cv::circle(frame, curr[i], 3, cv::Scalar(0, 0, 255), -1);
-//
-//            // 绘制前一帧点（半透明）
-//            cv::circle(frame, prev[i], 3, cv::Scalar(255, 255, 0, 128), -1);
-//        }
-//    }
-//};
-
+#include <filesystem>
+#include "../RSTools/ImageBlockWriter.h"
+#include "GDALImageBase.h"
+#include <string>
 
 // 工具函数：获取数据类型大小
 static size_t getDataTypeSize(ImageDataType type) {
@@ -157,15 +55,11 @@ DenseOpticalFlowResult calculateOpticalFlowStandard(const ReadResult& prevBlock,
     int polyN = 5,
     double polySigma = 1.1);
 
-
-
 // 辅助函数：将ReadResult转换为OpenCV Mat
 cv::Mat convertToCVMat(const ReadResult& result, int bandIndex = 0);
 
 cv::Mat toFloatMat(const ReadResult* res, int bandIndex = 0);
 std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray);
-
-
 
 class OpticalFlowOffset {
 private:
@@ -182,5 +76,20 @@ public:
     SparseOpticalFlowResult calculateOpticalFlowOffset(const ReadResult& prevBlock,
         const ReadResult& currBlock);
 
-
+    // 新增：从稀疏匹配点构建密集偏移并按块保存
+    // blockWidth/blockHeight: 每个保存块的像素大小
+    // outDir: 输出目录（必须存在）
+    // kernelSigma/kernelRadius: 插值核参数（sigma, 半径）
+    // New: compute dense offsets and save as GeoTIFF using ImageBlockWriter
+    // outPath: output GeoTIFF path
+    // gt/proj: geotransform and projection for output
+    bool computeDenseOffsetsAndSaveBlocks(const ReadResult& prevBlock,
+        const ReadResult& currBlock,
+        int blockWidth,
+        int blockHeight,
+        const std::string& outPath,
+        const GeoTransform& gt,
+        const std::string& projectionWkt,
+        float kernelSigma = 10.0f,
+        int kernelRadius = 15);
 };

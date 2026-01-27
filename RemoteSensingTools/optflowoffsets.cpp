@@ -1,5 +1,11 @@
 ﻿#include "optflowoffsets.h"
 
+#include <fstream>
+#include <filesystem>
+#include <cmath>
+#include <numeric>
+#include "../RSTools/ImageBlockWriter.h"
+
 SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
     const ReadResult& prevBlock,
     const ReadResult& currBlock) {
@@ -19,9 +25,6 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
             return result;
         }
 
-        // 将数据转换为灰度图像
-        //cv::Mat prevGray, currGray;
-
         if (prevBlock.bands > 1) {
             prev_gray = convertToCVMat(prevBlock, 0);
             curr_gray = convertToCVMat(currBlock, 0);
@@ -31,73 +34,43 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
             curr_gray = convertToCVMat(currBlock, 0);
         }
 
-        // 确保图像大小一致
-        //if (prevGray.size() != currGray.size()) {
-        //    cv::resize(currGray, currGray, prevGray.size());
-        //}
-		//cv::imshow("Prev Gray", prev_gray);
-		//cv::imshow("Curr Gray", curr_gray);
-		//cv::waitKey(0);
-
-
-
         if (prev_gray.empty() || curr_gray.empty()) {
             result.success = false;
             result.errorMessage = "One or both input frames are empty";
             return result;
         }
-        // 方法1：结合ORB特征和LK光流
-        //cv::Ptr<cv::ORB> orb = cv::ORB::create(100);
-        //std::vector<cv::KeyPoint> kps1, kps2;
-        //cv::Mat desc1, desc2;
 
-        //orb->detectAndCompute(prev_gray, cv::noArray(), kps1, desc1);
-        //orb->detectAndCompute(prev_gray, cv::noArray(), kps2, desc2);
+        // 使用混合特征检测获得稀疏点
+        std::vector<cv::Point2f> points1 = detectHybridFeatures(prev_gray);
+        std::vector<cv::Point2f> points2 = detectHybridFeatures(curr_gray);
 
-
-
-        //// 转换为Point2f用于LK
-        std::vector<cv::Point2f> points1, points2;
-        //cv::KeyPoint::convert(kps1, points1);
-        //cv::KeyPoint::convert(kps2, points2);
-
-
-		points1 = detectHybridFeatures(prev_gray);
-		points2 = detectHybridFeatures(curr_gray);
-
-        // 使用LK光流精炼匹配
+        // 使用LK光流精炼匹配（注意：这里调用者传入的points2并非直接对应，但后续筛选基于status/err）
         std::vector<uchar> status;
         std::vector<float> err;
-        cv::calcOpticalFlowPyrLK(prev_gray, prev_gray, points1, points2,
-            status, err);
-        // 4. 可视化结果
+        cv::calcOpticalFlowPyrLK(prev_gray, curr_gray, points1, points2, status, err, winSize, maxLevel, criteria);
+
+        // 可视化（可选）
         cv::Mat frame1_color, frame2_color;
         cv::cvtColor(prev_gray, frame1_color, cv::COLOR_GRAY2BGR);
         cv::cvtColor(prev_gray, frame2_color, cv::COLOR_GRAY2BGR);
 
-        // 3. 筛选出跟踪成功的点
         std::vector<cv::Point2f> good_points1;
         std::vector<cv::Point2f> good_points2;
 
         for (size_t i = 0; i < status.size(); i++) {
-            if (status[i] == 1 && err[i] < 30.0) {  // 状态为1表示成功跟踪
+            if (status[i] == 1 && err[i] < 30.0) {
                 good_points1.push_back(points1[i]);
                 good_points2.push_back(points2[i]);
             }
         }
 
-        // 绘制跟踪点
         for (size_t i = 0; i < good_points1.size(); i++) {
-            // 第一帧中的点（绿色）
             cv::circle(frame1_color, good_points1[i], 3, cv::Scalar(0, 255, 0), -1);
-            // 第二帧中的点（红色）
             cv::circle(frame2_color, good_points2[i], 3, cv::Scalar(0, 0, 255), -1);
         }
 
-        // 绘制运动轨迹
         cv::Mat combined;
         cv::hconcat(frame1_color, frame2_color, combined);
-
         for (size_t i = 0; i < good_points1.size(); i++) {
             cv::Point pt2_in_combined = cv::Point(
                 good_points2[i].x + prev_gray.cols,
@@ -107,17 +80,13 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
                 cv::Scalar(255, 255, 0), 1);
         }
 
-        // 5. 保存和显示结果
-        //cv::imwrite("optical_flow_result.jpg", combined);
-
         cv::imshow("Optical Flow", combined);
         cv::waitKey(0);
-		result.prevPoints = good_points1;
-		result.currPoints = good_points2;
-		result.status = status;
 
+        result.prevPoints = good_points1;
+        result.currPoints = good_points2;
+        result.status = status;
         result.success = true;
-
     }
     catch (const std::exception& e) {
         result.success = false;
@@ -127,7 +96,7 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
 }
 
 
-// 计算光流的主函数 - 使用标准视频模块
+// -------------------- Dense Farneback function (unchanged) --------------------
 DenseOpticalFlowResult calculateOpticalFlowStandard(
     const ReadResult& prevBlock,
     const ReadResult& currBlock,
@@ -189,8 +158,6 @@ DenseOpticalFlowResult calculateOpticalFlowStandard(
             polySigma,       // 多项式标准差
             0               // 标志位
         );
-
-
 
         // 分离X和Y方向的光流
         std::vector<cv::Mat> flowChannels;
@@ -328,19 +295,32 @@ cv::Mat convertToCVMat(const ReadResult& result, int bandIndex ) {
         cvType = CV_32FC1;
         mat = cv::Mat(result.height, result.width, cvType, bandData);
         // 归一化到0-255
-        double minVal, maxVal;
-        cv::minMaxLoc(mat, &minVal, &maxVal);
-        mat = (mat - minVal) * (255.0 / (maxVal - minVal));
-        mat.convertTo(mat, CV_8UC1);
+        {
+            double minVal, maxVal;
+            cv::minMaxLoc(mat, &minVal, &maxVal);
+            if (maxVal - minVal > 1e-9) {
+                mat = (mat - minVal) * (255.0 / (maxVal - minVal));
+            } else {
+                mat = cv::Mat::zeros(mat.size(), mat.type());
+            }
+            mat.convertTo(mat, CV_8UC1);
+        }
         break;
 
     case Float64:
         cvType = CV_64FC1;
         mat = cv::Mat(result.height, result.width, cvType, bandData);
         // 归一化到0-255
-        cv::minMaxLoc(mat, &minVal, &maxVal);
-        mat = (mat - minVal) * (255.0 / (maxVal - minVal));
-        mat.convertTo(mat, CV_8UC1);
+        {
+            double minVal, maxVal;
+            cv::minMaxLoc(mat, &minVal, &maxVal);
+            if (maxVal - minVal > 1e-9) {
+                mat = (mat - minVal) * (255.0 / (maxVal - minVal));
+            } else {
+                mat = cv::Mat::zeros(mat.size(), mat.type());
+            }
+            mat.convertTo(mat, CV_8UC1);
+        }
         break;
 
     default:
@@ -356,7 +336,6 @@ cv::Mat convertToCVMat(const ReadResult& result, int bandIndex ) {
 
     return mat.clone(); // 返回深拷贝
 }
-
 
 // 多种特征检测器组合
 std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray) {
@@ -409,4 +388,102 @@ std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray) {
     }
 
     return allPoints;
+}
+
+// 新增：对外入口函数 — 计算密集偏移并按块写入 GeoTIFF
+bool OpticalFlowOffset::computeDenseOffsetsAndSaveBlocks(const ReadResult& prevBlock,
+    const ReadResult& currBlock,
+    int blockWidth,
+    int blockHeight,
+    const std::string& outPath,
+    const GeoTransform& gt,
+    const std::string& projectionWkt,
+    float kernelSigma,
+    int kernelRadius) {
+
+    try {
+        // 调用稀疏匹配计算
+        SparseOpticalFlowResult sparse = this->calculateOpticalFlowOffset(prevBlock, currBlock);
+        if (!sparse.success) return false;
+        if (prevBlock.width <= 0 || prevBlock.height <= 0) return false;
+
+        int cols = prevBlock.width;
+        int rows = prevBlock.height;
+
+        // 使用更精细的RBF插值代替简单高斯局部权重
+        // 简单RBF实现：基于高斯RBF, 但为避免求解全局线性系统（大），使用局部RBF求解每个块
+
+        // 创建输出写器：2波段，band0 = x offset, band1 = y offset
+        ImageBlockWriter writer(outPath, cols, rows, 2, gt, projectionWkt);
+        if (!writer.isOpen()) return false;
+
+        // 遍历每个块，局部采样稀疏点并用RBF插值
+        for (int by = 0; by < rows; by += blockHeight) {
+            for (int bx = 0; bx < cols; bx += blockWidth) {
+                int w = std::min(blockWidth, cols - bx);
+                int h = std::min(blockHeight, rows - by);
+
+                // 收集落在局部扩展窗口内的点（扩展 radius）
+                int ext = kernelRadius * 2;
+                int sx = std::max(0, bx - ext);
+                int sy = std::max(0, by - ext);
+                int ex = std::min(cols - 1, bx + w + ext);
+                int ey = std::min(rows - 1, by + h + ext);
+
+                std::vector<cv::Point2f> srcPts;
+                std::vector<float> valX, valY;
+                for (size_t i = 0; i < sparse.prevPoints.size(); ++i) {
+                    if (i < sparse.status.size() && sparse.status[i] == 0) continue;
+                    auto p = sparse.prevPoints[i];
+                    if (p.x >= sx && p.x <= ex && p.y >= sy && p.y <= ey) {
+                        srcPts.push_back(p);
+                        valX.push_back(sparse.currPoints[i].x - p.x);
+                        valY.push_back(sparse.currPoints[i].y - p.y);
+                    }
+                }
+
+                // 准备输出块缓冲
+                std::vector<float> bufX(w * h, std::numeric_limits<float>::quiet_NaN());
+                std::vector<float> bufY(w * h, std::numeric_limits<float>::quiet_NaN());
+
+                if (!srcPts.empty()) {
+                    // 局部RBF插值：使用高斯核，并做正规化加权（类似核RBF近似）
+                    const float eps = 1e-6f;
+                    const float twoSigma2 = 2.0f * kernelSigma * kernelSigma;
+                    for (int yy = 0; yy < h; ++yy) {
+                        for (int xx = 0; xx < w; ++xx) {
+                            int gx = bx + xx;
+                            int gy = by + yy;
+                            float numX = 0.0f, den = 0.0f;
+                            float numY = 0.0f;
+                            for (size_t k = 0; k < srcPts.size(); ++k) {
+                                float dx = gx - srcPts[k].x;
+                                float dy = gy - srcPts[k].y;
+                                float r2 = dx * dx + dy * dy + eps;
+                                float wgt = std::exp(-r2 / twoSigma2);
+                                numX += valX[k] * wgt;
+                                numY += valY[k] * wgt;
+                                den += wgt;
+                            }
+                            float vx = (den > eps) ? (numX / den) : 0.0f;
+                            float vy = (den > eps) ? (numY / den) : 0.0f;
+                            bufX[yy * w + xx] = vx;
+                            bufY[yy * w + xx] = vy;
+                        }
+                    }
+                }
+
+                // 写入当前块
+                const float* ptrs[2] = { bufX.data(), bufY.data() };
+                if (!writer.writeBlock(bx, by, w, h, ptrs)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+    catch (const std::exception& e) {
+        return false;
+    }
 }
