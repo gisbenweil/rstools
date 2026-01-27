@@ -80,8 +80,8 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
                 cv::Scalar(255, 255, 0), 1);
         }
 
-        cv::imshow("Optical Flow", combined);
-        cv::waitKey(0);
+        //cv::imshow("Optical Flow", combined);
+        //cv::waitKey(0);
 
         result.prevPoints = good_points1;
         result.currPoints = good_points2;

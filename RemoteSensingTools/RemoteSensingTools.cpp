@@ -327,12 +327,6 @@ int main(int argc, char** argv)
         std::cout << "整数偏移: (" << cb.rightOffsetXi << ", " << cb.rightOffsetYi << ")\n";
         // 输出文件路径
     std::string outOffsetPath = "F:/变形测试/offsets.tif";
-    // 创建两波段输出（band0 = dx, band1 = dy），大小为合并画布
-    ImageBlockWriter writer(outOffsetPath, cb.combinedWidth, cb.combinedHeight, 2, cb.combinedGT, linfo->projection);
-    if (!writer.isOpen()) {
-        std::cerr << "无法创建输出文件: " << outOffsetPath << std::endl;
-        // 继续但不会写入
-    }
 
     ImageBlockReader rreader(rpath, 512, 512, 16, &rightArea);
     ImageBlockReader lreader(lpath, 512, 512, 16, &leftArea);
@@ -341,6 +335,17 @@ int main(int argc, char** argv)
     const int templHalf = 3; // 模板半尺寸 => 模板 7x7
     const int templW = templHalf * 2 + 1;
     const int searchRadius = 16; // 在右影像中心周围搜索 +/-searchRadius
+
+    // prepare per-output-block containers to accumulate sparse matches during tile traversal
+    const int outBlockW = 512;
+    const int outBlockH = 512;
+    int blocksX = static_cast<int>(std::ceil(cb.combinedWidth / static_cast<double>(outBlockW)));
+    int blocksY = static_cast<int>(std::ceil(cb.combinedHeight / static_cast<double>(outBlockH)));
+    int totalBlocks = std::max(1, blocksX) * std::max(1, blocksY);
+
+    std::vector<std::vector<cv::Point2f>> prevPtsPerBlock(totalBlocks);
+    std::vector<std::vector<cv::Point2f>> currPtsPerBlock(totalBlocks);
+    std::vector<std::vector<uchar>> statusPerBlock(totalBlocks);
 
     while (true) {
         ReadResult* rres = nullptr;
@@ -367,23 +372,86 @@ int main(int argc, char** argv)
             continue;
         }
 
-        
-
         cv::Mat lband = convertToCVMat(*lres, 0);
         cv::Mat rband = convertToCVMat(*rres, 0);
 
-        //cv::imshow("left", lband);
-        //cv::imshow("right", rband);
-        //cv::waitKey(0);
+        OpticalFlowOffset ofCalculator = OpticalFlowOffset();
+        SparseOpticalFlowResult sparse = ofCalculator.calculateOpticalFlowOffset(*lres, *rres);
+        // transform sparse points to combined canvas coordinates and assign to output blocks
+        if (sparse.success && !sparse.prevPoints.empty() && sparse.prevPoints.size() == sparse.currPoints.size()) {
+            for (size_t i = 0; i < sparse.prevPoints.size(); ++i) {
+                if (i < sparse.status.size() && sparse.status[i] == 0) continue;
+                double prevCombinedX = cb.leftOffsetXf + lspec.readX + sparse.prevPoints[i].x;
+                double prevCombinedY = cb.leftOffsetYf + lspec.readY + sparse.prevPoints[i].y;
+                double currCombinedX = cb.rightOffsetXf + rspec.readX + sparse.currPoints[i].x;
+                double currCombinedY = cb.rightOffsetYf + rspec.readY + sparse.currPoints[i].y;
 
-		OpticalFlowOffset ofCalculator = OpticalFlowOffset();
-		ofCalculator.calculateOpticalFlowOffset(*lres, *rres);
+                // clamp
+                if (prevCombinedX < 0 || prevCombinedY < 0 || prevCombinedX >= cb.combinedWidth || prevCombinedY >= cb.combinedHeight) continue;
 
-       
+                int bxIdx = static_cast<int>(prevCombinedX) / outBlockW;
+                int byIdx = static_cast<int>(prevCombinedY) / outBlockH;
+                if (bxIdx < 0) bxIdx = 0; if (byIdx < 0) byIdx = 0;
+                if (bxIdx >= blocksX) bxIdx = blocksX - 1; if (byIdx >= blocksY) byIdx = blocksY - 1;
+
+                int blockIndex = byIdx * blocksX + bxIdx;
+                prevPtsPerBlock[blockIndex].emplace_back(static_cast<float>(prevCombinedX), static_cast<float>(prevCombinedY));
+                currPtsPerBlock[blockIndex].emplace_back(static_cast<float>(currCombinedX), static_cast<float>(currCombinedY));
+                statusPerBlock[blockIndex].push_back(sparse.status[i]);
+            }
+        }
 
         // 释放
         RSTools_DestroyReadResult(rres);
         RSTools_DestroyReadResult(lres);
+    }
+
+    // After collecting sparse matches per output block, flatten to global lists for densification
+    std::vector<cv::Point2f> allPrevPts;
+    std::vector<cv::Point2f> allCurrPts;
+    std::vector<uchar> allStatus;
+    for (size_t bi = 0; bi < prevPtsPerBlock.size(); ++bi) {
+        for (size_t j = 0; j < prevPtsPerBlock[bi].size(); ++j) {
+            allPrevPts.push_back(prevPtsPerBlock[bi][j]);
+            allCurrPts.push_back(currPtsPerBlock[bi][j]);
+            if (j < statusPerBlock[bi].size()) allStatus.push_back(statusPerBlock[bi][j]);
+            else allStatus.push_back(1);
+        }
+    }
+
+    OpticalFlowOffset densifier;
+    std::vector<std::tuple<int,int,int,int>> blocksOut;
+    std::vector<std::vector<float>> bufXOut, bufYOut;
+    // parameters
+    OpticalFlowOffset::InterpMethod method = OpticalFlowOffset::TPS_GLOBAL;
+    float kernelSigma = 8.0f;
+    int kernelRadius = 16;
+    double regularization = 1e-3;
+    int maxGlobalPoints = 2000;
+
+    bool ok = densifier.computeDenseToBlocks(allPrevPts, allCurrPts, allStatus,
+        cb.combinedWidth, cb.combinedHeight,
+        512, 512,
+        blocksOut, bufXOut, bufYOut,
+        method, kernelSigma, kernelRadius, regularization, maxGlobalPoints);
+
+    if (!ok) {
+        std::cerr << "computeDenseToBlocks failed" << std::endl;
+    } else {
+        // write buffers to GeoTIFF using ImageBlockWriter in main thread sequentially
+        ImageBlockWriter writer(outOffsetPath, cb.combinedWidth, cb.combinedHeight, 2, cb.combinedGT, linfo->projection);
+        if (!writer.isOpen()) {
+            std::cerr << "无法创建输出文件: " << outOffsetPath << std::endl;
+        } else {
+            for (size_t i = 0; i < blocksOut.size(); ++i) {
+                int bx, by, w, h; std::tie(bx, by, w, h) = blocksOut[i];
+                const float* ptrs[2] = { bufXOut[i].data(), bufYOut[i].data() };
+                if (!writer.writeBlock(bx, by, w, h, ptrs)) {
+                    std::cerr << "写入块失败: " << bx << "," << by << std::endl;
+                }
+            }
+            std::cout << "生成密集偏移 GeoTIFF 成功: " << outOffsetPath << std::endl;
+        }
     }
     }
 

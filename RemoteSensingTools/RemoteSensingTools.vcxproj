@@ -158,6 +158,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="optflowoffsets.cpp" />
+    <ClCompile Include="optflowoffsets_impl.cpp" />
     <ClCompile Include="RemoteSensingTools.cpp" />
   </ItemGroup>
   <ItemGroup>

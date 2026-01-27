@@ -76,6 +76,49 @@ public:
     SparseOpticalFlowResult calculateOpticalFlowOffset(const ReadResult& prevBlock,
         const ReadResult& currBlock);
 
+    enum InterpMethod {
+        TPS_GLOBAL = 0,
+        IDW_LOCAL = 1,
+        KNN_KRIGING_APPROX = 2
+    };
+
+    bool computeDenseFromPointsAndSaveGeoTIFF(
+        const std::vector<cv::Point2f>& prevPts,
+        const std::vector<cv::Point2f>& currPts,
+        const std::vector<uchar>& status,
+        int imgWidth,
+        int imgHeight,
+        int blockWidth,
+        int blockHeight,
+        const std::string& outPath,
+        const GeoTransform& gt,
+        const std::string& projectionWkt,
+        InterpMethod method = TPS_GLOBAL,
+        float kernelSigma = 10.0f,
+        int kernelRadius = 15,
+        double regularization = 1e-3,
+        int maxGlobalPoints = 1500);
+
+    // Compute dense offsets into per-block buffers (no file I/O).
+    // blocksOut: list of blocks as tuples (bx,by,w,h) in row-major order
+    // bufXOut/bufYOut: per-block float buffers (row-major w*h)
+    bool computeDenseToBlocks(
+        const std::vector<cv::Point2f>& prevPts,
+        const std::vector<cv::Point2f>& currPts,
+        const std::vector<uchar>& status,
+        int imgWidth,
+        int imgHeight,
+        int blockWidth,
+        int blockHeight,
+        std::vector<std::tuple<int,int,int,int>>& blocksOut,
+        std::vector<std::vector<float>>& bufXOut,
+        std::vector<std::vector<float>>& bufYOut,
+        InterpMethod method = TPS_GLOBAL,
+        float kernelSigma = 10.0f,
+        int kernelRadius = 15,
+        double regularization = 1e-3,
+        int maxGlobalPoints = 1500);
+
     // 新增：从稀疏匹配点构建密集偏移并按块保存
     // blockWidth/blockHeight: 每个保存块的像素大小
     // outDir: 输出目录（必须存在）

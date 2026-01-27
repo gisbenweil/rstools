@@ -21,6 +21,9 @@
     <ClCompile Include="optflowoffsets.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="optflowoffsets_impl.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="optflowoffsets.h">
