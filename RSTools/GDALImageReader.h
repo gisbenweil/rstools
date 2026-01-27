@@ -1,31 +1,31 @@
-#pragma once
+ï»¿#pragma once
 #include "RSToolsExport.h"
 #include "GDALImageBase.h"
 #include <string>
 
 extern "C" {
 
-// ³õÊ¼»¯ GDAL£¨¿ÉÑ¡£¬µ«ÍÆ¼öÔÚÊ¹ÓÃÇ°µ÷ÓÃÒ»´Î£©
+// åˆå§‹åŒ– GDALï¼ˆå¯é€‰ï¼Œä½†æ¨èåœ¨ä½¿ç”¨å‰è°ƒç”¨ä¸€æ¬¡ï¼‰
 RSTOOLS_API void RSTools_Initialize();
 
-// ¶ÁÈ¡Õû¸öÓ°Ïñ»òÖ¸¶¨´°¿Ú£¨Èç¹û width/height Îª 0 Ôò¶ÁÈ¡ÕûÓ°Ïñ£©
-// ·µ»ØÖ¸ÕëÓÉ RSTools_DestroyReadResult ÊÍ·Å
-// path: UTF-8 »ò±¾µØ±àÂë£¨ÊÓ GDAL ±àÒëÓëÏµÍ³ÉèÖÃ£©
-// x,y,width,height: ÏñËØ´°¿Ú
+// è¯»å–æ•´ä¸ªå½±åƒæˆ–æŒ‡å®šçª—å£ï¼ˆå¦‚æœ width/height ä¸º 0 åˆ™è¯»å–æ•´å½±åƒï¼‰
+// è¿”å›æŒ‡é’ˆç”± RSTools_DestroyReadResult é‡Šæ”¾
+// path: UTF-8 æˆ–æœ¬åœ°ç¼–ç ï¼ˆè§† GDAL ç¼–è¯‘ä¸ç³»ç»Ÿè®¾ç½®ï¼‰
+// x,y,width,height: åƒç´ çª—å£
 RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int width, int height);
 
-// ÊÍ·ÅÓÉ RSTools_ReadImage ·µ»ØµÄ ReadResult
+// é‡Šæ”¾ç”± RSTools_ReadImage è¿”å›çš„ ReadResult
 RSTOOLS_API void RSTools_DestroyReadResult(ReadResult* result);
 
-// ¶ÁÈ¡Ó°Ïñ»ù±¾ĞÅÏ¢£¨²»¶ÁÈ¡ÏñËØÊı¾İ£©£¬·µ»ØÓÉ DLL ·ÖÅäµÄ ImageInfo*£¬ÇëÊ¹ÓÃ RSTools_DestroyImageInfo ÊÍ·Å
+// è¯»å–å½±åƒåŸºæœ¬ä¿¡æ¯ï¼ˆä¸è¯»å–åƒç´ æ•°æ®ï¼‰ï¼Œè¿”å›ç”± DLL åˆ†é…çš„ ImageInfo*ï¼Œè¯·ä½¿ç”¨ RSTools_DestroyImageInfo é‡Šæ”¾
 RSTOOLS_API ImageInfo* RSTools_GetImageInfo(const char* path);
 
-// ÊÍ·ÅÓÉ RSTools_GetImageInfo ·µ»ØµÄ ImageInfo
+// é‡Šæ”¾ç”± RSTools_GetImageInfo è¿”å›çš„ ImageInfo
 RSTOOLS_API void RSTools_DestroyImageInfo(ImageInfo* info);
 
 } // extern "C"
 
-// C++ ÖØÔØ£º¶ÁÈ¡²¢Ëõ·Åµ½Ö¸¶¨Êä³ö³ß´ç£¨outWidth/outHeight£©£¬²¢¿ÉÖ¸¶¨ÖØ²ÉÑùËã·¨
-// Ö§³Ö resampleMethod: "nearest", "bilinear", "cubic"£¨²»Çø·Ö´óĞ¡Ğ´£©
-// ×¢Òâ£ºÕâÊÇ C++ Á´½Ó£¨mangled Ãû³Æ£©£¬ÓÃÓÚÔÚ C++ ´úÂëÖĞµ÷ÓÃÖØÔØ°æ±¾¡£Ô­ extern "C" µÄ½Ó¿Ú±£³Ö²»±äÒÔ¼æÈİÒÑÓĞ¶ş½øÖÆµ÷ÓÃ¡£
+// C++ é‡è½½ï¼šè¯»å–å¹¶ç¼©æ”¾åˆ°æŒ‡å®šè¾“å‡ºå°ºå¯¸ï¼ˆoutWidth/outHeightï¼‰ï¼Œå¹¶å¯æŒ‡å®šé‡é‡‡æ ·ç®—æ³•
+// æ”¯æŒ resampleMethod: "nearest", "bilinear", "cubic"ï¼ˆä¸åŒºåˆ†å¤§å°å†™ï¼‰
+// æ³¨æ„ï¼šè¿™æ˜¯ C++ é“¾æ¥ï¼ˆmangled åç§°ï¼‰ï¼Œç”¨äºåœ¨ C++ ä»£ç ä¸­è°ƒç”¨é‡è½½ç‰ˆæœ¬ã€‚åŸ extern "C" çš„æ¥å£ä¿æŒä¸å˜ä»¥å…¼å®¹å·²æœ‰äºŒè¿›åˆ¶è°ƒç”¨ã€‚
 RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int width, int height, int outWidth, int outHeight, const char* resampleMethod);

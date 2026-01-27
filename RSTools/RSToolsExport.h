@@ -1,6 +1,6 @@
-#pragma once
+ï»¿#pragma once
 
-// µ¼³öºê£º±àÒë DLL Ê±¶¨Òå RSTOOLS_EXPORTS£¨ÔÚÏîÄ¿ÊôÐÔ Preprocessor Definitions ÖÐÌí¼Ó£©£¬Ê¹ÓÃ·½²»¶¨Òå
+// å¯¼å‡ºå®ï¼šç¼–è¯‘ DLL æ—¶å®šä¹‰ RSTOOLS_EXPORTSï¼ˆåœ¨é¡¹ç›®å±žæ€§ Preprocessor Definitions ä¸­æ·»åŠ ï¼‰ï¼Œä½¿ç”¨æ–¹ä¸å®šä¹‰
 #ifdef _WIN32
   #ifdef RSTOOLS_EXPORTS
     #define RSTOOLS_API __declspec(dllexport)

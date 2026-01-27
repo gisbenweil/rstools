@@ -1,7 +1,134 @@
-#include "optflowoffset.h"
+﻿#include "optflowoffsets.h"
+
+SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
+    const ReadResult& prevBlock,
+    const ReadResult& currBlock) {
+    SparseOpticalFlowResult result;
+    try {
+        // 检查输入有效性
+        if (!prevBlock.success || !currBlock.success) {
+            result.success = false;
+            result.errorMessage = "One or both input blocks are invalid";
+            return result;
+        }
+
+        if (prevBlock.width != currBlock.width ||
+            prevBlock.height != currBlock.height) {
+            result.success = false;
+            result.errorMessage = "Block dimensions do not match";
+            return result;
+        }
+
+        // 将数据转换为灰度图像
+        //cv::Mat prevGray, currGray;
+
+        if (prevBlock.bands > 1) {
+            prev_gray = convertToCVMat(prevBlock, 0);
+            curr_gray = convertToCVMat(currBlock, 0);
+        }
+        else {
+            prev_gray = convertToCVMat(prevBlock, 0);
+            curr_gray = convertToCVMat(currBlock, 0);
+        }
+
+        // 确保图像大小一致
+        //if (prevGray.size() != currGray.size()) {
+        //    cv::resize(currGray, currGray, prevGray.size());
+        //}
+		//cv::imshow("Prev Gray", prev_gray);
+		//cv::imshow("Curr Gray", curr_gray);
+		//cv::waitKey(0);
+
+
+
+        if (prev_gray.empty() || curr_gray.empty()) {
+            result.success = false;
+            result.errorMessage = "One or both input frames are empty";
+            return result;
+        }
+        // 方法1：结合ORB特征和LK光流
+        //cv::Ptr<cv::ORB> orb = cv::ORB::create(100);
+        //std::vector<cv::KeyPoint> kps1, kps2;
+        //cv::Mat desc1, desc2;
+
+        //orb->detectAndCompute(prev_gray, cv::noArray(), kps1, desc1);
+        //orb->detectAndCompute(prev_gray, cv::noArray(), kps2, desc2);
+
+
+
+        //// 转换为Point2f用于LK
+        std::vector<cv::Point2f> points1, points2;
+        //cv::KeyPoint::convert(kps1, points1);
+        //cv::KeyPoint::convert(kps2, points2);
+
+
+		points1 = detectHybridFeatures(prev_gray);
+		points2 = detectHybridFeatures(curr_gray);
+
+        // 使用LK光流精炼匹配
+        std::vector<uchar> status;
+        std::vector<float> err;
+        cv::calcOpticalFlowPyrLK(prev_gray, prev_gray, points1, points2,
+            status, err);
+        // 4. 可视化结果
+        cv::Mat frame1_color, frame2_color;
+        cv::cvtColor(prev_gray, frame1_color, cv::COLOR_GRAY2BGR);
+        cv::cvtColor(prev_gray, frame2_color, cv::COLOR_GRAY2BGR);
+
+        // 3. 筛选出跟踪成功的点
+        std::vector<cv::Point2f> good_points1;
+        std::vector<cv::Point2f> good_points2;
+
+        for (size_t i = 0; i < status.size(); i++) {
+            if (status[i] == 1 && err[i] < 30.0) {  // 状态为1表示成功跟踪
+                good_points1.push_back(points1[i]);
+                good_points2.push_back(points2[i]);
+            }
+        }
+
+        // 绘制跟踪点
+        for (size_t i = 0; i < good_points1.size(); i++) {
+            // 第一帧中的点（绿色）
+            cv::circle(frame1_color, good_points1[i], 3, cv::Scalar(0, 255, 0), -1);
+            // 第二帧中的点（红色）
+            cv::circle(frame2_color, good_points2[i], 3, cv::Scalar(0, 0, 255), -1);
+        }
+
+        // 绘制运动轨迹
+        cv::Mat combined;
+        cv::hconcat(frame1_color, frame2_color, combined);
+
+        for (size_t i = 0; i < good_points1.size(); i++) {
+            cv::Point pt2_in_combined = cv::Point(
+                good_points2[i].x + prev_gray.cols,
+                good_points2[i].y
+            );
+            cv::line(combined, good_points1[i], pt2_in_combined,
+                cv::Scalar(255, 255, 0), 1);
+        }
+
+        // 5. 保存和显示结果
+        //cv::imwrite("optical_flow_result.jpg", combined);
+
+        cv::imshow("Optical Flow", combined);
+        cv::waitKey(0);
+		result.prevPoints = good_points1;
+		result.currPoints = good_points2;
+		result.status = status;
+
+        result.success = true;
+
+    }
+    catch (const std::exception& e) {
+        result.success = false;
+        result.errorMessage = std::string("Error calculating optical flow offset: ") + e.what();
+    }
+    return result;
+}
+
 
 // 计算光流的主函数 - 使用标准视频模块
-OpticalFlowResult calculateOpticalFlowStandard(
+DenseOpticalFlowResult calculateOpticalFlowStandard(
     const ReadResult& prevBlock,
     const ReadResult& currBlock,
     double pyramidScale ,
@@ -11,7 +138,7 @@ OpticalFlowResult calculateOpticalFlowStandard(
     int polyN ,
     double polySigma ) {
 
-    OpticalFlowResult result;
+    DenseOpticalFlowResult result;
 
     try {
         // 检查输入有效性
@@ -231,3 +358,55 @@ cv::Mat convertToCVMat(const ReadResult& result, int bandIndex ) {
 }
 
 
+// 多种特征检测器组合
+std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray) {
+    std::vector<cv::Point2f> allPoints;
+
+    // 1. 角点特征
+    std::vector<cv::Point2f> corners;
+    cv::goodFeaturesToTrack(gray, corners, 200, 0.01, 10);
+    allPoints.insert(allPoints.end(), corners.begin(), corners.end());
+
+    // 2. FAST特征
+    std::vector<cv::KeyPoint> fastKeypoints;
+    cv::Ptr<cv::FastFeatureDetector> fast = cv::FastFeatureDetector::create();
+    fast->detect(gray, fastKeypoints);
+
+    std::vector<cv::Point2f> fastPoints;
+    cv::KeyPoint::convert(fastKeypoints, fastPoints);
+
+    // 去除与角点太近的FAST点
+    for (const auto& pt : fastPoints) {
+        bool tooClose = false;
+        for (const auto& corner : corners) {
+            if (cv::norm(pt - corner) < 10) {
+                tooClose = true;
+                break;
+            }
+        }
+        if (!tooClose) {
+            allPoints.push_back(pt);
+        }
+    }
+
+    // 3. 网格采样补充
+    int gridSize = 30;
+    for (int y = gridSize; y < gray.rows; y += gridSize) {
+        for (int x = gridSize; x < gray.cols; x += gridSize) {
+            // 检查该区域是否已有特征点
+            bool hasPoint = false;
+            for (const auto& pt : allPoints) {
+                if (std::abs(pt.x - x) < gridSize / 2 &&
+                    std::abs(pt.y - y) < gridSize / 2) {
+                    hasPoint = true;
+                    break;
+                }
+            }
+            if (!hasPoint) {
+                allPoints.emplace_back(x, y);
+            }
+        }
+    }
+
+    return allPoints;
+}

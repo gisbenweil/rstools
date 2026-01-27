@@ -14,7 +14,7 @@
 #include "ImageBlockWriter.h"
 #include "opencv2/opencv.hpp"
 
-#include "optflowoffset.h"
+#include "optflowoffsets.h"
 
 using namespace cv;
 
@@ -170,7 +170,7 @@ static CombinedBoundsResult computeCombinedBounds(const ImageInfo* left, const I
     gt.yOrigin = res.maxY;
     gt.pixelHeight = left->geoTransform.pixelHeight;
     gt.pixelWidth = left->geoTransform.pixelWidth;
-	gt.rotationX = left->geoTransform.rotationX;
+    gt.rotationX = left->geoTransform.rotationX;
     gt.rotationY = left->geoTransform.rotationY;
 
     // 保持 pixelWidth, pixelHeight, rotationX/Y 与 left 一致（已在调用处要求一致）
@@ -212,37 +212,7 @@ static CombinedBoundsResult computeCombinedBounds(const ImageInfo* left, const I
 
 int main(int argc, char** argv)
 {
-    // 打开摄像头
-    cv::VideoCapture cap(0);
-    if (!cap.isOpened()) {
-        std::cerr << "无法打开摄像头！" << std::endl;
-        return -1;
-    }
-
-    OpticalFlowTracker tracker;
-    cv::Mat frame;
-
-    while (true) {
-        cap >> frame;
-        if (frame.empty()) break;
-
-        auto start = std::chrono::high_resolution_clock::now();
-
-        tracker.processFrame(frame);
-
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-        // 显示FPS
-        std::string fps = "FPS: " + std::to_string(1000.0 / duration.count());
-        cv::putText(frame, fps, cv::Point(10, 30),
-            cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 255), 2);
-
-        cv::imshow("Optical Flow Tracking", frame);
-
-        if (cv::waitKey(1) == 27) break;  // 按ESC退出
-    }
-
+    
 
     // 测试1：显示OpenCV版本
     std::cout << "OpenCV Version: " << CV_VERSION << std::endl;
@@ -251,27 +221,9 @@ int main(int argc, char** argv)
 
     //std::string lpath = "F:/变形测试/磐安县/磐安县.img";
     //std::string rpath = "F:/变形测试/磐安县.img";
-    std::string lpath = "G:/变形测试/磐安县_clip_before1.tif";
-    std::string rpath = "G:/变形测试/磐安县_clip_after1.tif";
-    /*if (argc >= 2) {
-        lpath = argv[1];
-    }
-    else {
-        std::cout << "请输入原始影像文件路径（或回车取消）: ";
-        std::getline(std::cin, lpath);
-    }
-    if (argc >= 3) {
-        rpath = argv[2];
-    }
-    else
-    {
-        std::cout << "请输入参考影像文件路径（或回车取消）: ";
-        std::getline(std::cin, rpath);
-    }
-    if (lpath.empty() || rpath.empty()) {
-        std::cout << "路径不对，退出。\n";
-        return 0;
-    }*/
+    std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
+    std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
+   
     // 初始化 GDAL
     RSTools_Initialize();
     ImageInfo* linfo = RSTools_GetImageInfo(lpath.c_str());
@@ -336,7 +288,7 @@ int main(int argc, char** argv)
             std::abs(lgt.pixelHeight - rgt.pixelHeight) > 1e-8) {
             std::cout << "像素大小不一致，无法比较。\n";
             return 0;
-	    }
+        }
 
 
         // 新增：计算两个影像的最大边界（地理坐标）及在该边界下左右影像的像素偏移
@@ -345,15 +297,15 @@ int main(int argc, char** argv)
             linfo->geoTransform,
             cb.minX, cb.minY,
             cb.maxX, cb.maxY,
-			0);
+            0);
         const ReadArea rightArea = ReadArea::fromGeoExtent(
             rinfo->geoTransform,
             cb.minX, cb.minY,
-			cb.maxX, cb.maxY,0);
+            cb.maxX, cb.maxY,0);
         std::cout << "左影像在合并画布中的读取区域: x=" << leftArea.x << ", y=" << leftArea.y
-				<< ", width=" << leftArea.width << ", height=" << leftArea.height << "\n";
-		std::cout << "右影像在合并画布中的读取区域: x=" << rightArea.x << ", y=" << rightArea.y
-				<< ", width=" << rightArea.width << ", height=" << rightArea.height << "\n";
+                << ", width=" << leftArea.width << ", height=" << leftArea.height << "\n";
+        std::cout << "右影像在合并画布中的读取区域: x=" << rightArea.x << ", y=" << rightArea.y
+                << ", width=" << rightArea.width << ", height=" << rightArea.height << "\n";
         //cb.
         std::cout << "---- 合并边界（地理坐标） ----\n";
         std::cout << std::fixed << std::setprecision(8);
@@ -420,204 +372,14 @@ int main(int argc, char** argv)
         cv::Mat lband = convertToCVMat(*lres, 0);
         cv::Mat rband = convertToCVMat(*rres, 0);
 
-        cv::imshow("left", lband);
-        cv::imshow("right", rband);
-        cv::waitKey(0);
+        //cv::imshow("left", lband);
+        //cv::imshow("right", rband);
+        //cv::waitKey(0);
 
-        OpticalFlowResult ofResult = calculateOpticalFlowStandard(*lres, *rres);
-        if (!ofResult.success) {
-            std::cerr << "计算 Optical Flow 失败: " << ofResult.errorMessage << std::endl;
-            RSTools_DestroyReadResult(rres);
-            RSTools_DestroyReadResult(lres);
-            continue;
-        }
-        //cv::Mat flow_dx = convertToCVMat(ofResult.flowX, 0);
-        //cv::Mat flow_dy = convertToCVMat(*rres, 0);
-        cv::imshow("flow_dx", ofResult.flowX);
-        cv::imshow("flow_dy", ofResult.flowY);
-        cv::imshow("flow_magnitude", ofResult.magnitude);
-        cv::waitKey(0);
+		OpticalFlowOffset ofCalculator = OpticalFlowOffset();
+		ofCalculator.calculateOpticalFlowOffset(*lres, *rres);
 
-        //// 生成 NoData 检测值（若 ReadResult 提供了 noDataValues，则使用第一个值）
-        //bool leftHasNoData = !lres->noDataValues.empty();
-        //double leftNoDataVal = leftHasNoData ? lres->noDataValues[0] : std::numeric_limits<double>::quiet_NaN();
-        //bool rightHasNoData = !rres->noDataValues.empty();
-        //double rightNoDataVal = rightHasNoData ? rres->noDataValues[0] : std::numeric_limits<double>::quiet_NaN();
-
-        //// 构造输出偏移缓冲（与左块尺寸相同），并初始化为 NaN
-        //cv::Mat offsetX(lres->height, lres->width, CV_32F, cv::Scalar(std::numeric_limits<float>::quiet_NaN()));
-        //cv::Mat offsetY(lres->height, lres->width, CV_32F, cv::Scalar(std::numeric_limits<float>::quiet_NaN()));
-
-        //// 遍历左块像素（跳过边缘，保证模板完整）
-        //for (int ly = templHalf; ly < lres->height - templHalf; ++ly) {
-        //    for (int lx = templHalf; lx < lres->width - templHalf; ++lx) {
-        //        // 全局左影像像素坐标
-        //        int leftGlobalX = lspec.readX + lx;
-        //        int leftGlobalY = lspec.readY + ly;
-
-        //        // 判断左像素是否为 NoData（简单以中心像素判断）
-        //        bool leftIsNoData = false;
-        //        if (leftHasNoData) {
-        //            float v = lband.at<float>(ly, lx);
-        //            if (std::isfinite(static_cast<double>(v)) && v == static_cast<float>(leftNoDataVal)) leftIsNoData = true;
-        //            // NaN 也视为无效
-        //            if (!std::isfinite(v)) leftIsNoData = true;
-        //        } else {
-        //            float v = lband.at<float>(ly, lx);
-        //            if (!std::isfinite(v)) leftIsNoData = true; // 若数据本身为 NaN
-        //        }
-
-        //        // 将左像素位置映射到地理坐标，再映射到右影像像素坐标（浮点）
-        //        double geoX = 0.0, geoY = 0.0;
-        //        linfo->geoTransform.pixelToGeo(static_cast<double>(leftGlobalX), static_cast<double>(leftGlobalY), geoX, geoY);
-        //        double rightPxF = 0.0, rightPyF = 0.0;
-        //        bool okMap = rinfo->geoTransform.geoToPixel(geoX, geoY, rightPxF, rightPyF);
-        //        if (!okMap) continue;
-
-        //        // 计算右影像在右块缓冲中的中心坐标（浮点）
-        //        double rightBufCx = rightPxF - rspec.readX;
-        //        double rightBufCy = rightPyF - rspec.readY;
-
-        //        // 搜索窗口范围（在右块缓冲坐标）
-        //        int searchX0 = static_cast<int>(std::floor(rightBufCx)) - searchRadius;
-        //        int searchY0 = static_cast<int>(std::floor(rightBufCy)) - searchRadius;
-        //        int searchX1 = static_cast<int>(std::floor(rightBufCx)) + searchRadius;
-        //        int searchY1 = static_cast<int>(std::floor(rightBufCy)) + searchRadius;
-
-        //        // 保证搜索窗口和模板在右块缓冲内
-        //        int rW = rres->width;
-        //        int rH = rres->height;
-        //        if (searchX0 < 0) searchX0 = 0;
-        //        if (searchY0 < 0) searchY0 = 0;
-        //        if (searchX1 >= rW) searchX1 = rW - 1;
-        //        if (searchY1 >= rH) searchY1 = rH - 1;
-
-        //        int sw = searchX1 - searchX0 + 1;
-        //        int sh = searchY1 - searchY0 + 1;
-        //        if (sw <= templW || sh <= templW) continue; // 搜索窗口必须大于模板
-
-        //        // 提取模板（左）与搜索区域（右）作为 float 矩阵
-        //        cv::Rect templRect(lx - templHalf, ly - templHalf, templW, templW);
-        //        cv::Mat templ = lband(templRect);
-        //        // 检查模板是否主要为 NoData (若中心 NoData 且模板绝大多数 NoData，则跳过)
-        //        if (leftHasNoData) {
-        //            // 若模板中心就是 NoData，跳过
-        //            float centerVal = templ.at<float>(templHalf, templHalf);
-        //            if (!std::isfinite(centerVal) || centerVal == static_cast<float>(leftNoDataVal)) {
-        //                continue;
-        //            }
-        //        } else {
-        //            float centerVal = templ.at<float>(templHalf, templHalf);
-        //            if (!std::isfinite(centerVal)) continue;
-        //        }
-
-        //        cv::Rect searchRect(searchX0, searchY0, sw, sh);
-        //        cv::Mat searchRegion = rband(searchRect);
-
-        //        // 若搜索区域或模板包含大量无效值，跳过以避免误匹配
-        //        // 简单策略：require center pixel of candidate to be valid when considering result later.
-
-        //        // 使用 matchTemplate 查找最佳匹配（SSD 归一化）
-        //        cv::Mat result;
-        //        // matchTemplate 要求模板尺寸 <= 搜索区域
-        //        cv::matchTemplate(searchRegion, templ, result, cv::TM_SQDIFF_NORMED);
-
-        //        // 找最小值位置
-        //        double minVal, maxVal;
-        //        cv::Point minLoc, maxLoc;
-        //        cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-
-        //        // minLoc 为搜索区域内的左上角位置，使模板最佳匹配
-        //        // 计算对应的右影像像素中心位置（绝对右影像像素坐标）
-        //        int matchTopLeftX = searchX0 + minLoc.x;
-        //        int matchTopLeftY = searchY0 + minLoc.y;
-        //        double matchCenterRightX = static_cast<double>(rspec.readX + matchTopLeftX + templHalf);
-        //        double matchCenterRightY = static_cast<double>(rspec.readY + matchTopLeftY + templHalf);
-
-        //        // 判断右侧对应中心像素是否为 NoData
-        //        bool rightCenterNoData = false;
-        //        if (rightHasNoData) {
-        //            int rx = static_cast<int>(std::round(matchCenterRightX)) - rspec.readX;
-        //            int ry = static_cast<int>(std::round(matchCenterRightY)) - rspec.readY;
-        //            if (rx < 0 || rx >= rres->width || ry < 0 || ry >= rres->height) rightCenterNoData = true;
-        //            else {
-        //                float rv = rband.at<float>(ry, rx);
-        //                if (!std::isfinite(rv) || rv == static_cast<float>(rightNoDataVal)) rightCenterNoData = true;
-        //            }
-        //        } else {
-        //            int rx = static_cast<int>(std::round(matchCenterRightX)) - rspec.readX;
-        //            int ry = static_cast<int>(std::round(matchCenterRightY)) - rspec.readY;
-        //            if (rx < 0 || rx >= rres->width || ry < 0 || ry >= rres->height) rightCenterNoData = true;
-        //            else {
-        //                float rv = rband.at<float>(ry, rx);
-        //                if (!std::isfinite(rv)) rightCenterNoData = true;
-        //            }
-        //        }
-
-        //        // 如果两侧均为无效，则跳过
-        //        if (leftIsNoData && rightCenterNoData) continue;
-
-        //        // 计算偏移：右影像像素坐标（浮点） - 左影像全局像素坐标（浮点）
-        //        float dx = static_cast<float>(matchCenterRightX - static_cast<double>(leftGlobalX));
-        //        float dy = static_cast<float>(matchCenterRightY - static_cast<double>(leftGlobalY));
-
-        //        offsetX.at<float>(ly, lx) = dx;
-        //        offsetY.at<float>(ly, lx) = dy;
-        //    }
-        //}
-
-        //// 将 offsetX/offsetY 写入到合并画布（按合并画布像素坐标）
-        //// 计算左块左上角（全局）像素在合并画布的像素坐标
-        //double geoX0 = 0.0, geoY0 = 0.0;
-        //// leftGlobal origin pixel coords = lspec.readX, lspec.readY
-        //linfo->geoTransform.pixelToGeo(static_cast<double>(lspec.readX), static_cast<double>(lspec.readY), geoX0, geoY0);
-        //double outPxF = 0.0, outPyF = 0.0;
-        //bool okOut = cb.combinedGT.geoToPixel(geoX0, geoY0, outPxF, outPyF);
-        //if (okOut && writer.isOpen()) {
-        //    int outX = static_cast<int>(std::floor(outPxF + 0.5));
-        //    int outY = static_cast<int>(std::floor(outPyF + 0.5));
-
-        //    // 准备连续缓冲并写入（注意 writer 接受 float* 指向行主序连续数据）
-        //    // 我们需要把 offset mats 截取为写入区域（可能超出合并画布边界）
-        //    int writeW = lres->width;
-        //    int writeH = lres->height;
-        //    // 若超出合并画布边界则裁剪
-        //    if (outX < 0) {
-        //        int dx = -outX;
-        //        if (dx >= writeW) { /*全部超出*/ writeW = 0; }
-        //        else {
-        //            // shift data pointer horizontally by dx
-        //            // We'll copy to temp buffer below
-        //            outX = 0;
-        //        }
-        //    }
-        //    if (outY < 0) {
-        //        int dy = -outY;
-        //        if (dy >= writeH) { writeH = 0; }
-        //        else {
-        //            outY = 0;
-        //        }
-        //    }
-        //    if (outX + writeW > cb.combinedWidth) writeW = cb.combinedWidth - outX;
-        //    if (outY + writeH > cb.combinedHeight) writeH = cb.combinedHeight - outY;
-
-        //    if (writeW > 0 && writeH > 0) {
-        //        // 创建连续缓冲并复制数据行（写区域以左块内部相同起点）
-        //        std::vector<float> bufDx(writeW * writeH, std::numeric_limits<float>::quiet_NaN());
-        //        std::vector<float> bufDy(writeW * writeH, std::numeric_limits<float>::quiet_NaN());
-        //        for (int y = 0; y < writeH; ++y) {
-        //            int srcY = y;
-        //            int dstY = y;
-        //            for (int x = 0; x < writeW; ++x) {
-        //                int srcX = x;
-        //                bufDx[dstY * writeW + x] = offsetX.at<float>(srcY, srcX);
-        //                bufDy[dstY * writeW + x] = offsetY.at<float>(srcY, srcX);
-        //            }
-        //        }
-        //        const float* bandsPtr[2] = { bufDx.data(), bufDy.data() };
-        //        writer.writeBlock(outX, outY, writeW, writeH, bandsPtr);
-        //    }
-        //}
+       
 
         // 释放
         RSTools_DestroyReadResult(rres);

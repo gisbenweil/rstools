@@ -1,4 +1,4 @@
-#include "GDALImageReader.h"
+ï»¿#include "GDALImageReader.h"
 #include <gdal_priv.h>
 #include <cpl_conv.h> // CPLMalloc, CSLCount
 #include <memory>
@@ -71,7 +71,7 @@ RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int wi
         return result;
     }
 
-    // °´²¨¶ÎÖğ¸ö¶ÁÈ¡£¬´æ·ÅÎª band0...bandN Á¬Ğø¿é£¨Óë GDALImageBase::ReadResult::getPixel ¼Ù¶¨Ò»ÖÂ£©
+    // æŒ‰æ³¢æ®µé€ä¸ªè¯»å–ï¼Œå­˜æ”¾ä¸º band0...bandN è¿ç»­å—ï¼ˆä¸ GDALImageBase::ReadResult::getPixel å‡å®šä¸€è‡´ï¼‰
     char* basePtr = static_cast<char*>(result->data);
     for (int b = 0; b < bands; ++b) {
         GDALRasterBand* rb = ds->GetRasterBand(b + 1);
@@ -88,7 +88,7 @@ RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int wi
             return result;
         }
 
-        // »ñÈ¡²¢±£´æ NoData Öµ£¨¿ÉÑ¡£©
+        // è·å–å¹¶ä¿å­˜ NoData å€¼ï¼ˆå¯é€‰ï¼‰
         int hasNoData = 0;
         double nd = rb->GetNoDataValue(&hasNoData);
         if (hasNoData) {
@@ -97,13 +97,13 @@ RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int wi
         }
     }
 
-    // Ìî³äÆäËûĞÅÏ¢
+    // å¡«å……å…¶ä»–ä¿¡æ¯
     result->success = true;
     result->dataSize = totalBytes;
-    // ²»Ìî³ä bandOffsets£¨±£³ÖÎª¿Õ£©£¬GDALImageBase::ReadResult::getPixel Ê¹ÓÃÕâÖÖ²¼¾Ö
+    // ä¸å¡«å…… bandOffsetsï¼ˆä¿æŒä¸ºç©ºï¼‰ï¼ŒGDALImageBase::ReadResult::getPixel ä½¿ç”¨è¿™ç§å¸ƒå±€
     result->bandOffsets.clear();
 
-    // Ìî³ä ImageInfo ¿É°´ĞèÀ©Õ¹£¨ÕâÀïÖ»ÑİÊ¾»ù±¾ĞÅÏ¢£©
+    // å¡«å…… ImageInfo å¯æŒ‰éœ€æ‰©å±•ï¼ˆè¿™é‡Œåªæ¼”ç¤ºåŸºæœ¬ä¿¡æ¯ï¼‰
     result->errorMessage.clear();
 
     GDALClose(ds);
@@ -115,7 +115,7 @@ RSTOOLS_API void RSTools_DestroyReadResult(ReadResult* result) {
     delete result;
 }
 
-// ------------- Ó°ÏñĞÅÏ¢µÈº¯Êı±£³Ö²»±ä -------------
+// ------------- å½±åƒä¿¡æ¯ç­‰å‡½æ•°ä¿æŒä¸å˜ -------------
 RSTOOLS_API ImageInfo* RSTools_GetImageInfo(const char* path) {
     if (!path) return nullptr;
 
@@ -154,7 +154,7 @@ RSTOOLS_API ImageInfo* RSTools_GetImageInfo(const char* path) {
     const char* proj = ds->GetProjectionRef();
     info->projection = proj ? proj : "";
 
-    // Metadata: ¼òµ¥Æ´½Ó key=value ĞĞ£¨¿É°´Ğè¸ÄÎª JSON£©
+    // Metadata: ç®€å•æ‹¼æ¥ key=value è¡Œï¼ˆå¯æŒ‰éœ€æ”¹ä¸º JSONï¼‰
     char** md = ds->GetMetadata();
     if (md && *md) {
         std::string meta;
@@ -169,7 +169,7 @@ RSTOOLS_API ImageInfo* RSTools_GetImageInfo(const char* path) {
         info->metadata.clear();
     }
 
-    // Pyramid (overviews)£ºÊ¹ÓÃµÚÒ»¸ö²¨¶ÎµÄ overviews ĞÅÏ¢£¬¼ÇÂ¼Ã¿¸ö overview µÄ downsample factor£¨ÕûÊı£©
+    // Pyramid (overviews)ï¼šä½¿ç”¨ç¬¬ä¸€ä¸ªæ³¢æ®µçš„ overviews ä¿¡æ¯ï¼Œè®°å½•æ¯ä¸ª overview çš„ downsample factorï¼ˆæ•´æ•°ï¼‰
     info->pyramidLevels.clear();
     if (info->bands > 0) {
         GDALRasterBand* rb = ds->GetRasterBand(1);
@@ -216,9 +216,9 @@ RSTOOLS_API void RSTools_DestroyImageInfo(ImageInfo* info) {
 } // extern "C"
 
 
-// ---------------- ĞÂÔö£ºC++ ÖØÔØÊµÏÖ£¨Í¬Ãû£¬µ«Îª C++ Á´½Ó£© ----------------
-// Ê¹ÓÃ GDALRasterIOExtraArg Ö¸¶¨ÖØ²ÉÑùËã·¨£¬ÓÉ GDAL ÔÚ RasterIO ÖĞÍê³ÉÖØ²ÉÑù¡£
-// Ö§³Ö resampleMethod: "nearest", "bilinear", "cubic"£¨²»Çø·Ö´óĞ¡Ğ´£©¡£
+// ---------------- æ–°å¢ï¼šC++ é‡è½½å®ç°ï¼ˆåŒåï¼Œä½†ä¸º C++ é“¾æ¥ï¼‰ ----------------
+// ä½¿ç”¨ GDALRasterIOExtraArg æŒ‡å®šé‡é‡‡æ ·ç®—æ³•ï¼Œç”± GDAL åœ¨ RasterIO ä¸­å®Œæˆé‡é‡‡æ ·ã€‚
+// æ”¯æŒ resampleMethod: "nearest", "bilinear", "cubic"ï¼ˆä¸åŒºåˆ†å¤§å°å†™ï¼‰ã€‚
 RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int width, int height, int outWidth, int outHeight, const char* resampleMethod) {
     if (!path) return nullptr;
 
@@ -242,14 +242,14 @@ RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int wi
     if (y + height > imgH) height = imgH - y;
     if (width <= 0 || height <= 0) { GDALClose(ds); delete result; return nullptr; }
 
-    // Êä³ö³ß´ç´¦Àí£ºÈç¹ûÎ´Ö¸¶¨Êä³ö³ß´ç£¬·µ»ØÔ­´°¿Ú´óĞ¡
+    // è¾“å‡ºå°ºå¯¸å¤„ç†ï¼šå¦‚æœæœªæŒ‡å®šè¾“å‡ºå°ºå¯¸ï¼Œè¿”å›åŸçª—å£å¤§å°
     if (outWidth <= 0) outWidth = width;
     if (outHeight <= 0) outHeight = height;
 
     GDALRasterBand* band0 = ds->GetRasterBand(1);
     GDALDataType gdalType = band0->GetRasterDataType();
     result->dataType = MapGDALType(gdalType);
-    result->width = outWidth;   // ·µ»ØµÄ¿í¸ßÎªÊä³ö³ß´ç
+    result->width = outWidth;   // è¿”å›çš„å®½é«˜ä¸ºè¾“å‡ºå°ºå¯¸
     result->height = outHeight;
     result->bands = bands;
 
@@ -283,7 +283,7 @@ RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int wi
         extraArg.eResampleAlg = GRIORA_NearestNeighbour;
     }
 
-    // ¶ÔÃ¿¸ö²¨¶Î£ºµ÷ÓÃ RasterIO£¬Ö¸¶¨Êä³ö»º³å³ß´çÓë extraArg£¬ÓÉ GDAL ¸ºÔğÖØ²ÉÑù
+    // å¯¹æ¯ä¸ªæ³¢æ®µï¼šè°ƒç”¨ RasterIOï¼ŒæŒ‡å®šè¾“å‡ºç¼“å†²å°ºå¯¸ä¸ extraArgï¼Œç”± GDAL è´Ÿè´£é‡é‡‡æ ·
     char* basePtr = static_cast<char*>(result->data);
     for (int b = 0; b < bands; ++b) {
         GDALRasterBand* rb = ds->GetRasterBand(b + 1);
@@ -301,7 +301,7 @@ RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int wi
             return result;
         }
 
-        // »ñÈ¡²¢±£´æ NoData Öµ£¨¿ÉÑ¡£©
+        // è·å–å¹¶ä¿å­˜ NoData å€¼ï¼ˆå¯é€‰ï¼‰
         int hasNoData = 0;
         double nd = rb->GetNoDataValue(&hasNoData);
         if (hasNoData) {
@@ -310,7 +310,7 @@ RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int wi
         }
     }
 
-    // Ìî³äÆäËûĞÅÏ¢
+    // å¡«å……å…¶ä»–ä¿¡æ¯
     result->success = true;
     result->dataSize = totalOutBytes;
     result->bandOffsets.clear();

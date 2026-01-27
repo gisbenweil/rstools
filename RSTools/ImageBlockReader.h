@@ -1,72 +1,72 @@
-#pragma once
+ï»¿#pragma once
 #include "RSToolsExport.h"
 #include "GDALImageBase.h"
 #include <string>
 
 /**
- * @brief ·Ö¿é¶ÁÈ¡ĞÅÏ¢£¨·µ»Ø¸øµ÷ÓÃÕßµÄÔªĞÅÏ¢£©
+ * @brief åˆ†å—è¯»å–ä¿¡æ¯ï¼ˆè¿”å›ç»™è°ƒç”¨è€…çš„å…ƒä¿¡æ¯ï¼‰
  */
 struct RSTOOLS_API BlockSpec {
-	int tileX;      // ÍßÆ¬×óÉÏ½Ç£¨ÔÚÖ¸¶¨·¶Î§/Ó°Ïñ×ø±êÏµÖĞ£©
+	int tileX;      // ç“¦ç‰‡å·¦ä¸Šè§’ï¼ˆåœ¨æŒ‡å®šèŒƒå›´/å½±åƒåæ ‡ç³»ä¸­ï¼‰
 	int tileY;
-	int tileWidth;  // ÍßÆ¬µÄÂß¼­¿í¸ß£¨²»º¬ padding£¬¿ÉÄÜ×îºóÒ»ÁĞ/ĞĞĞ¡ÓÚ blockSize£©
+	int tileWidth;  // ç“¦ç‰‡çš„é€»è¾‘å®½é«˜ï¼ˆä¸å« paddingï¼Œå¯èƒ½æœ€åä¸€åˆ—/è¡Œå°äº blockSizeï¼‰
 	int tileHeight;
 
-	// Êµ¼Ê¶ÁÈ¡´°¿Ú£¨°üº¬ padding£¬²¢ÒÑ²Ã¼ôµ½Ó°Ïñ·¶Î§£©
+	// å®é™…è¯»å–çª—å£ï¼ˆåŒ…å« paddingï¼Œå¹¶å·²è£å‰ªåˆ°å½±åƒèŒƒå›´ï¼‰
 	int readX;
 	int readY;
 	int readWidth;
 	int readHeight;
 
-	int padding;    // ÇëÇóµÄ padding£¨¿ÉÄÜ±»²Ã¼ô£©
+	int padding;    // è¯·æ±‚çš„ paddingï¼ˆå¯èƒ½è¢«è£å‰ªï¼‰
 };
 
 /**
- * @brief ImageBlockReader£º°´¿é¶ÁÈ¡Ó°Ïñ£¬Ö§³Ö padding Óë×Ô¶¨Òå·¶Î§
+ * @brief ImageBlockReaderï¼šæŒ‰å—è¯»å–å½±åƒï¼Œæ”¯æŒ padding ä¸è‡ªå®šä¹‰èŒƒå›´
  *
- * Ê¹ÓÃÊ¾Àı£º
+ * ä½¿ç”¨ç¤ºä¾‹ï¼š
  * ImageBlockReader reader(path, 512, 512, 16);
  * while (true) {
  *   ReadResult* res = nullptr;
  *   BlockSpec spec;
  *   if (!reader.next(&res, &spec)) break;
- *   // ´¦Àí res£¨×¢Òâ res->width/res->height == spec.readWidth/readHeight£©
+ *   // å¤„ç† resï¼ˆæ³¨æ„ res->width/res->height == spec.readWidth/readHeightï¼‰
  *   RSTools_DestroyReadResult(res);
  * }
  */
 class RSTOOLS_API ImageBlockReader {
 public:
-	// path: Ó°ÏñÂ·¾¶
-	// blockWidth/blockHeight: ÍßÆ¬³ß´ç
-	// padding: ÏòÍâÀ©Õ¹ÏñËØ£¨ËÄÖÜ£©£¬¿ÉÎª0
-	// range: ¿ÉÑ¡¶ÁÈ¡·¶Î§£¨Èô width/height Îª0ÔòÊÓÎªÕû·ùÓ°Ïñ£©
+	// path: å½±åƒè·¯å¾„
+	// blockWidth/blockHeight: ç“¦ç‰‡å°ºå¯¸
+	// padding: å‘å¤–æ‰©å±•åƒç´ ï¼ˆå››å‘¨ï¼‰ï¼Œå¯ä¸º0
+	// range: å¯é€‰è¯»å–èŒƒå›´ï¼ˆè‹¥ width/height ä¸º0åˆ™è§†ä¸ºæ•´å¹…å½±åƒï¼‰
 	ImageBlockReader(const std::string& path, int blockWidth, int blockHeight, int padding = 0, const ReadArea* range = nullptr);
 	~ImageBlockReader();
 
-	// ÊÇ·ñ³É¹¦´ò¿ª²¢¿ÉÊ¹ÓÃ
+	// æ˜¯å¦æˆåŠŸæ‰“å¼€å¹¶å¯ä½¿ç”¨
 	bool isOpen() const;
 
-	// ÖØÖÃµü´úµ½ÆğÊ¼¿é
+	// é‡ç½®è¿­ä»£åˆ°èµ·å§‹å—
 	void reset();
 
-	// »ñÈ¡×Ü¿éÊı£¨»ùÓÚÖ¸¶¨·¶Î§Óë blockSize ¼ÆËã£©
+	// è·å–æ€»å—æ•°ï¼ˆåŸºäºæŒ‡å®šèŒƒå›´ä¸ blockSize è®¡ç®—ï¼‰
 	int getTotalBlocks() const;
 
-	// »ñÈ¡ÒÑ´¦Àí¿éÊı
+	// è·å–å·²å¤„ç†å—æ•°
 	int getProcessedBlocks() const;
 
-	// »ñÈ¡Ó°Ïñ³ß´ç
+	// è·å–å½±åƒå°ºå¯¸
 	int imageWidth() const;
 	int imageHeight() const;
 
-	// »ñÈ¡ÏÂÒ»¸ö¿é£»·µ»Ø true ±íÊ¾ÒÑ·µ»ØÒ»¸ö¿é£¬out must be freed by caller via RSTools_DestroyReadResult.
-	// Èç¹û·µ»Ø false ±íÊ¾ÎŞ¸ü¶à¿é»ò·¢Éú´íÎó£¨out ÉèÖÃÎª nullptr£©
-	// ¿ÉÑ¡·µ»Ø²ÎÊı spec »á±»Ìî³ä£¨tile ÓëÊµ¼Ê¶ÁÈ¡´°¿ÚĞÅÏ¢£©
+	// è·å–ä¸‹ä¸€ä¸ªå—ï¼›è¿”å› true è¡¨ç¤ºå·²è¿”å›ä¸€ä¸ªå—ï¼Œout must be freed by caller via RSTools_DestroyReadResult.
+	// å¦‚æœè¿”å› false è¡¨ç¤ºæ— æ›´å¤šå—æˆ–å‘ç”Ÿé”™è¯¯ï¼ˆout è®¾ç½®ä¸º nullptrï¼‰
+	// å¯é€‰è¿”å›å‚æ•° spec ä¼šè¢«å¡«å……ï¼ˆtile ä¸å®é™…è¯»å–çª—å£ä¿¡æ¯ï¼‰
 	bool next(ReadResult** out, BlockSpec* spec = nullptr);
 
-	// ĞÂÔö£º°´ÕÕÈ«¾Ö·Ö¿éË÷ÒıÖ±½Ó¶ÁÈ¡Ö¸¶¨·Ö¿é£¨²»¸Ä±äµü´úÆ÷×´Ì¬£©
+	// æ–°å¢ï¼šæŒ‰ç…§å…¨å±€åˆ†å—ç´¢å¼•ç›´æ¥è¯»å–æŒ‡å®šåˆ†å—ï¼ˆä¸æ”¹å˜è¿­ä»£å™¨çŠ¶æ€ï¼‰
 	// index: [0, getTotalBlocks()-1]
-	// ·µ»Ø true ²¢ÔÚ *out Ìî³ä ReadResult*£¨ÓÉµ÷ÓÃÕßÍ¨¹ı RSTools_DestroyReadResult ÊÍ·Å£©
+	// è¿”å› true å¹¶åœ¨ *out å¡«å…… ReadResult*ï¼ˆç”±è°ƒç”¨è€…é€šè¿‡ RSTools_DestroyReadResult é‡Šæ”¾ï¼‰
 	bool readBlockByIndex(int index, ReadResult** out, BlockSpec* spec = nullptr);
 
 private:
@@ -75,7 +75,7 @@ private:
 	int blockH_;
 	int padding_;
 
-	// Í¼Æ¬ / ·¶Î§
+	// å›¾ç‰‡ / èŒƒå›´
 	int imgW_;
 	int imgH_;
 	ReadArea range_;
@@ -88,40 +88,40 @@ private:
 	int curXIdx_;
 	int curYIdx_;
 
-	// ×´Ì¬
+	// çŠ¶æ€
 	bool open_;
 	int processed_;
 
-	// µ¥Ò»´ò¿ªµÄ GDALDataset
+	// å•ä¸€æ‰“å¼€çš„ GDALDataset
 	GDALDataset* ds_;
 };
 
-// ---------------- C API ·â×°µ¼³ö£¨DLL ÓÑºÃ¡¢²»Í¸Ã÷¾ä±ú£© ----------------
+// ---------------- C API å°è£…å¯¼å‡ºï¼ˆDLL å‹å¥½ã€ä¸é€æ˜å¥æŸ„ï¼‰ ----------------
 extern "C" {
 
-// ´´½¨²¢·µ»Ø²»Í¸Ã÷¾ä±ú£¨ÇëÓÃ RSTools_ImageBlockReader_Destroy ÊÍ·Å£©
+// åˆ›å»ºå¹¶è¿”å›ä¸é€æ˜å¥æŸ„ï¼ˆè¯·ç”¨ RSTools_ImageBlockReader_Destroy é‡Šæ”¾ï¼‰
 RSTOOLS_API void* RSTools_ImageBlockReader_Create(const char* path, int blockWidth, int blockHeight, int padding, const ReadArea* range);
 
-// Ïú»Ù¾ä±ú
+// é”€æ¯å¥æŸ„
 RSTOOLS_API void RSTools_ImageBlockReader_Destroy(void* handle);
 
-// ÊÇ·ñ´ò¿ª³É¹¦
+// æ˜¯å¦æ‰“å¼€æˆåŠŸ
 RSTOOLS_API bool RSTools_ImageBlockReader_IsOpen(void* handle);
 
-// ÖØÖÃµü´ú
+// é‡ç½®è¿­ä»£
 RSTOOLS_API void RSTools_ImageBlockReader_Reset(void* handle);
 
-// ²éÑ¯×Ü¿éÊı / ÒÑ´¦Àí¿éÊı / Í¼Æ¬³ß´ç
+// æŸ¥è¯¢æ€»å—æ•° / å·²å¤„ç†å—æ•° / å›¾ç‰‡å°ºå¯¸
 RSTOOLS_API int RSTools_ImageBlockReader_GetTotalBlocks(void* handle);
 RSTOOLS_API int RSTools_ImageBlockReader_GetProcessedBlocks(void* handle);
 RSTOOLS_API int RSTools_ImageBlockReader_ImageWidth(void* handle);
 RSTOOLS_API int RSTools_ImageBlockReader_ImageHeight(void* handle);
 
-// ¶ÁÈ¡ÏÂÒ»¸ö¿é£º·µ»Ø true ²¢Êä³ö ReadResult*£¨ÓÉµ÷ÓÃÕßÍ¨¹ı RSTools_DestroyReadResult ÊÍ·Å£©
-// ÈôÎŞ¸ü¶à¿é»ò³ö´í·µ»Ø false ²¢½« *out ÖÃÎª nullptr
+// è¯»å–ä¸‹ä¸€ä¸ªå—ï¼šè¿”å› true å¹¶è¾“å‡º ReadResult*ï¼ˆç”±è°ƒç”¨è€…é€šè¿‡ RSTools_DestroyReadResult é‡Šæ”¾ï¼‰
+// è‹¥æ— æ›´å¤šå—æˆ–å‡ºé”™è¿”å› false å¹¶å°† *out ç½®ä¸º nullptr
 RSTOOLS_API bool RSTools_ImageBlockReader_Next(void* handle, ReadResult** out, BlockSpec* spec);
 
-// ĞÂÔö C API£º°´·Ö¿éË÷Òı¶ÁÈ¡Ö¸¶¨¿é
+// æ–°å¢ C APIï¼šæŒ‰åˆ†å—ç´¢å¼•è¯»å–æŒ‡å®šå—
 RSTOOLS_API bool RSTools_ImageBlockReader_ReadByIndex(void* handle, int index, ReadResult** out, BlockSpec* spec);
 
 } // extern "C"

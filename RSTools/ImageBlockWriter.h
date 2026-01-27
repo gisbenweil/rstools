@@ -1,28 +1,28 @@
-#pragma once
+ï»¿#pragma once
 #include <string>
 #include <gdal_priv.h>
 #include "GDALImageBase.h"
 
 class RSTOOLS_API ImageBlockWriter {
 public:
-    // ´´½¨Ò»¸ö¶à²¨¶Î Float32 GeoTIFF£¨bands ¸ö²¨¶Î£©
-    // path: Êä³öÎÄ¼şÂ·¾¶
-    // width/height: Õ¤¸ñÏñËØ³ß´ç£¨ºÏ²¢»­²¼£©
-    // bands: ²¨¶ÎÊı£¨±¾³¡¾°Îª2£©
-    // gt: Êä³ö GeoTransform£¨ÏñËØ/µØÀíÓ³Éä£©
-    // projectionWkt: Í¶Ó°£¨WKT£©£¬¿ÉÎª¿Õ
+    // åˆ›å»ºä¸€ä¸ªå¤šæ³¢æ®µ Float32 GeoTIFFï¼ˆbands ä¸ªæ³¢æ®µï¼‰
+    // path: è¾“å‡ºæ–‡ä»¶è·¯å¾„
+    // width/height: æ …æ ¼åƒç´ å°ºå¯¸ï¼ˆåˆå¹¶ç”»å¸ƒï¼‰
+    // bands: æ³¢æ®µæ•°ï¼ˆæœ¬åœºæ™¯ä¸º2ï¼‰
+    // gt: è¾“å‡º GeoTransformï¼ˆåƒç´ /åœ°ç†æ˜ å°„ï¼‰
+    // projectionWkt: æŠ•å½±ï¼ˆWKTï¼‰ï¼Œå¯ä¸ºç©º
     ImageBlockWriter(const std::string& path, int width, int height, int bands,
                      const GeoTransform& gt, const std::string& projectionWkt = std::string());
     ~ImageBlockWriter();
 
     bool isOpen() const;
 
-    // ½«²¨¶ÎÊı¾İĞ´Èëµ½Êä³öÍ¼ÏñµÄÖ¸¶¨´°¿Ú£¨×ø±êÎªÊä³ö»­²¼ÏñËØ×ø±ê£©
-    // bandDataPtrs: Ö¸ÏòÃ¿¸ö²¨¶Î»º³åÇøµÄÖ¸Õë£¨Ã¿¸ö»º³åÇøÎª float£¬°´ĞĞÖ÷Ğò£¬³ß´çÎª w*h£©
-    // ²¨¶ÎÊıÁ¿±ØĞëµÈÓÚ¹¹ÔìÊ±Ö¸¶¨µÄ bands
+    // å°†æ³¢æ®µæ•°æ®å†™å…¥åˆ°è¾“å‡ºå›¾åƒçš„æŒ‡å®šçª—å£ï¼ˆåæ ‡ä¸ºè¾“å‡ºç”»å¸ƒåƒç´ åæ ‡ï¼‰
+    // bandDataPtrs: æŒ‡å‘æ¯ä¸ªæ³¢æ®µç¼“å†²åŒºçš„æŒ‡é’ˆï¼ˆæ¯ä¸ªç¼“å†²åŒºä¸º floatï¼ŒæŒ‰è¡Œä¸»åºï¼Œå°ºå¯¸ä¸º w*hï¼‰
+    // æ³¢æ®µæ•°é‡å¿…é¡»ç­‰äºæ„é€ æ—¶æŒ‡å®šçš„ bands
     bool writeBlock(int outX, int outY, int w, int h, const float* const bandDataPtrs[]);
 
-    // ÉèÖÃÃ¿¸ö²¨¶ÎµÄ NoData Öµ£¨Ä¬ÈÏÊ¹ÓÃ NaN£©
+    // è®¾ç½®æ¯ä¸ªæ³¢æ®µçš„ NoData å€¼ï¼ˆé»˜è®¤ä½¿ç”¨ NaNï¼‰
     void setBandNoDataValue(int bandIndex, double nodata);
 
 private:

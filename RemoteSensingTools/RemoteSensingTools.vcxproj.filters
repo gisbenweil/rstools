@@ -23,8 +23,8 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="optflowoffset.h">
-      <Filter>源文件</Filter>
+    <ClInclude Include="optflowoffsets.h">
+      <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

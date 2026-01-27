@@ -1,4 +1,4 @@
-#include "ImageBlockWriter.h"
+ï»¿#include "ImageBlockWriter.h"
 #include <gdal_priv.h>
 #include <cpl_conv.h>
 #include <vector>
@@ -12,7 +12,7 @@ ImageBlockWriter::ImageBlockWriter(const std::string& path, int width, int heigh
     GDALDriver* drv = GetGDALDriverManager()->GetDriverByName("GTiff");
     if (!drv) return;
 
-    // ´´½¨Ñ¡Ïî£ºÑ¹ËõÓëÍßÆ¬£¬Ê¹´óÎÄ¼ş¸ßĞ§
+    // åˆ›å»ºé€‰é¡¹ï¼šå‹ç¼©ä¸ç“¦ç‰‡ï¼Œä½¿å¤§æ–‡ä»¶é«˜æ•ˆ
     char** papszOptions = nullptr;
     papszOptions = CSLSetNameValue(papszOptions, "TILED", "YES");
     papszOptions = CSLSetNameValue(papszOptions, "BLOCKXSIZE", "512");
@@ -23,23 +23,23 @@ ImageBlockWriter::ImageBlockWriter(const std::string& path, int width, int heigh
     CSLDestroy(papszOptions);
     if (!ds_) return;
 
-    // ÉèÖÃ GeoTransform
+    // è®¾ç½® GeoTransform
     double gdalTrans[6];
     gt.toGDAL(gdalTrans);
     ds_->SetGeoTransform(gdalTrans);
 
-    // ÉèÖÃÍ¶Ó°
+    // è®¾ç½®æŠ•å½±
     if (!projectionWkt.empty()) {
         ds_->SetProjection(projectionWkt.c_str());
     }
 
-    // ³õÊ¼»¯Ã¿¸ö²¨¶ÎÎª NaN£¨NoData£©
+    // åˆå§‹åŒ–æ¯ä¸ªæ³¢æ®µä¸º NaNï¼ˆNoDataï¼‰
     for (int b = 1; b <= bands_; ++b) {
         GDALRasterBand* rb = ds_->GetRasterBand(b);
         if (!rb) continue;
-        // ³¢ÊÔÉèÖÃ NoData Îª NaN£¨GDAL Ö§³Ö double NaN£©
+        // å°è¯•è®¾ç½® NoData ä¸º NaNï¼ˆGDAL æ”¯æŒ double NaNï¼‰
         rb->SetNoDataValue(std::numeric_limits<double>::quiet_NaN());
-        // ³õÊ¼»¯Îª NaN
+        // åˆå§‹åŒ–ä¸º NaN
         std::vector<float> row(width_, std::numeric_limits<float>::quiet_NaN());
         for (int y = 0; y < height_; ++y) {
             rb->RasterIO(GF_Write, 0, y, width_, 1, row.data(), width_, 1, GDT_Float32, 0, 0);
@@ -69,7 +69,7 @@ bool ImageBlockWriter::writeBlock(int outX, int outY, int w, int h, const float*
         GDALRasterBand* rb = ds_->GetRasterBand(b + 1);
         if (!rb) continue;
         const float* src = bandDataPtrs[b];
-        // Èç¹û src Îª nullptr£¬Ìø¹ıĞ´Èë£¨±£³ÖÒÑÓĞÖµ£©
+        // å¦‚æœ src ä¸º nullptrï¼Œè·³è¿‡å†™å…¥ï¼ˆä¿æŒå·²æœ‰å€¼ï¼‰
         if (!src) continue;
 
         CPLErr err = rb->RasterIO(GF_Write, outX, outY, w, h,

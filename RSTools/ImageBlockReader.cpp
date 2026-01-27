@@ -1,11 +1,11 @@
-#include "ImageBlockReader.h"
+ï»¿#include "ImageBlockReader.h"
 #include <gdal_priv.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cstdint>
 
-// Helper: map GDALDataType to ImageDataType (¾Ö²¿¸´ÖÆ£¬Óë GDALImageReader ÖĞµÄÓ³ÉäÒ»ÖÂ)
+// Helper: map GDALDataType to ImageDataType (å±€éƒ¨å¤åˆ¶ï¼Œä¸ GDALImageReader ä¸­çš„æ˜ å°„ä¸€è‡´)
 static ImageDataType MapGDALType(GDALDataType t) {
 	switch (t) {
 	case GDT_Byte: return ImageDataType::Byte;
@@ -19,7 +19,7 @@ static ImageDataType MapGDALType(GDALDataType t) {
 	}
 }
 
-// ½« double noData ÖµĞ´ÈëÄ¿±ê»º³å£¨°´ÔªËØ£©£¬ÓÃÓÚ³õÊ¼»¯³¬³ö·¶Î§²¿·Ö
+// å°† double noData å€¼å†™å…¥ç›®æ ‡ç¼“å†²ï¼ˆæŒ‰å…ƒç´ ï¼‰ï¼Œç”¨äºåˆå§‹åŒ–è¶…å‡ºèŒƒå›´éƒ¨åˆ†
 template<typename T>
 static void FillNoData(T* dst, size_t count, double nd) {
 	if (!dst) return;
@@ -32,7 +32,7 @@ ImageBlockReader::ImageBlockReader(const std::string& path, int blockWidth, int 
 	  padding_(std::max(0, padding)), imgW_(0), imgH_(0),
 	  tilesX_(0), tilesY_(0), curXIdx_(0), curYIdx_(0), open_(false), processed_(0), ds_(nullptr) {
 
-	// ´ò¿ªÊı¾İ¼¯Ò»´ÎÒÔ»ñÈ¡³ß´ç²¢ÔÚºóĞøÖØÓÃ
+	// æ‰“å¼€æ•°æ®é›†ä¸€æ¬¡ä»¥è·å–å°ºå¯¸å¹¶åœ¨åç»­é‡ç”¨
 	ds_ = static_cast<GDALDataset*>(GDALOpen(path_.c_str(), GA_ReadOnly));
 	if (!ds_) {
 		open_ = false;
@@ -41,25 +41,25 @@ ImageBlockReader::ImageBlockReader(const std::string& path, int blockWidth, int 
 	imgW_ = ds_->GetRasterXSize();
 	imgH_ = ds_->GetRasterYSize();
 
-	// ÉèÖÃ·¶Î§
+	// è®¾ç½®èŒƒå›´
 	if (range && range->isValid()) {
 		range_.x = range->x;
 		range_.y = range->y;
 		range_.width = range->width;
 		range_.height = range->height;
 		if (range_.width <= 0 || range_.height <= 0) {
-			// ÎŞĞ§£¬»ØÍËÎªÕû·ùÓ°Ïñ
+			// æ— æ•ˆï¼Œå›é€€ä¸ºæ•´å¹…å½±åƒ
 			range_.x = 0; range_.y = 0; range_.width = imgW_; range_.height = imgH_;
 		}
 	} else {
 		range_.x = 0; range_.y = 0; range_.width = imgW_; range_.height = imgH_;
 	}
 
-	// ¼ÆËã tiles
+	// è®¡ç®— tiles
 	tilesX_ = static_cast<int>(std::ceil(static_cast<double>(range_.width) / blockW_));
 	tilesY_ = static_cast<int>(std::ceil(static_cast<double>(range_.height) / blockH_));
 
-	// ·À»¤
+	// é˜²æŠ¤
 	if (tilesX_ <= 0) tilesX_ = 1;
 	if (tilesY_ <= 0) tilesY_ = 1;
 
@@ -103,7 +103,7 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 	if (!out) return false;
 	*out = nullptr;
 
-	// ÆÚÍû´°¿Ú£¨¿ÉÄÜ³¬³öÍ¼Ïñ£©
+	// æœŸæœ›çª—å£ï¼ˆå¯èƒ½è¶…å‡ºå›¾åƒï¼‰
 	int desiredReadX = tileX - padding;
 	int desiredReadY = tileY - padding;
 	int desiredRight = tileX + tileW + padding;
@@ -113,7 +113,7 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 
 	if (desiredReadW <= 0 || desiredReadH <= 0) return false;
 
-	// ¼ÆËãÓëÓ°ÏñµÄÖØµşÇøÓò£¨ÓÃÓÚ´ÓÎÄ¼ş¶ÁÈ¡£©
+	// è®¡ç®—ä¸å½±åƒçš„é‡å åŒºåŸŸï¼ˆç”¨äºä»æ–‡ä»¶è¯»å–ï¼‰
 	int overlapX0 = std::max(0, desiredReadX);
 	int overlapY0 = std::max(0, desiredReadY);
 	int overlapX1 = std::min(imgW, desiredRight);
@@ -121,13 +121,13 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 	int overlapW = overlapX1 - overlapX0;
 	int overlapH = overlapY1 - overlapY0;
 
-	// ´´½¨ ReadResult ²¢·ÖÅä»º³å£¨°´ÆÚÍû³ß´ç£¬¼´¿ÉÄÜ°üº¬³¬³ö²¿·Ö£©
+	// åˆ›å»º ReadResult å¹¶åˆ†é…ç¼“å†²ï¼ˆæŒ‰æœŸæœ›å°ºå¯¸ï¼Œå³å¯èƒ½åŒ…å«è¶…å‡ºéƒ¨åˆ†ï¼‰
 	auto rr = new ReadResult();
 	rr->success = false;
 	rr->width = desiredReadW;
 	rr->height = desiredReadH;
 
-	// ²¨¶ÎÓëÀàĞÍ
+	// æ³¢æ®µä¸ç±»å‹
 	int bands = ds->GetRasterCount();
 	rr->bands = bands;
 	GDALRasterBand* b0 = ds->GetRasterBand(1);
@@ -137,7 +137,7 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 	int bytesPerPixel = GDALGetDataTypeSizeBytes(gdalType);
 	if (bytesPerPixel <= 0) bytesPerPixel = 1;
 
-	// ÏÈÊÕ¼¯Ã¿²¨¶ÎµÄ NoData Öµ£¨ÓÃÓÚÌî³ä³¬³öÇøÓò£©
+	// å…ˆæ”¶é›†æ¯æ³¢æ®µçš„ NoData å€¼ï¼ˆç”¨äºå¡«å……è¶…å‡ºåŒºåŸŸï¼‰
 	std::vector<double> bandNoData(bands, 0.0);
 	for (int b = 0; b < bands; ++b) {
 		GDALRasterBand* rb = ds->GetRasterBand(b + 1);
@@ -157,7 +157,7 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 		delete rr;
 		return false;
 	}
-	// ³õÊ¼»¯Îª¸÷²¨¶ÎµÄ NoData£¨Öğ²¨¶ÎĞ´Èë£©
+	// åˆå§‹åŒ–ä¸ºå„æ³¢æ®µçš„ NoDataï¼ˆé€æ³¢æ®µå†™å…¥ï¼‰
 	char* basePtr = static_cast<char*>(rr->data);
 	for (int b = 0; b < bands; ++b) {
 		char* bandPtr = basePtr + static_cast<size_t>(b) * bandElemCount * bytesPerPixel;
@@ -190,10 +190,10 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 		}
 	}
 
-	// ÈôÓëÓ°ÏñÓĞÖØµşÇøÓò£¬´ÓÎÄ¼ş¶ÁÈ¡¸ÃÖØµşÇøÓò²¢¿½±´µ½Ä¿±ê»º³åµÄÕıÈ·Æ«ÒÆÎ»ÖÃ
+	// è‹¥ä¸å½±åƒæœ‰é‡å åŒºåŸŸï¼Œä»æ–‡ä»¶è¯»å–è¯¥é‡å åŒºåŸŸå¹¶æ‹·è´åˆ°ç›®æ ‡ç¼“å†²çš„æ­£ç¡®åç§»ä½ç½®
 	bool anyFail = false;
 	if (overlapW > 0 && overlapH > 0) {
-		// ÎªÃ¿¸ö²¨¶Î·Ö±ğ¶ÁÈ¡ overlap ÇøÓòµ½ÁÙÊ±»º³å£¬ÔÙ¿½±´µ½×îÖÕ»º³å
+		// ä¸ºæ¯ä¸ªæ³¢æ®µåˆ†åˆ«è¯»å– overlap åŒºåŸŸåˆ°ä¸´æ—¶ç¼“å†²ï¼Œå†æ‹·è´åˆ°æœ€ç»ˆç¼“å†²
 		size_t overlapElems = static_cast<size_t>(overlapW) * static_cast<size_t>(overlapH);
 		size_t overlapBytes = overlapElems * static_cast<size_t>(bytesPerPixel);
 		void* tempBuf = malloc(overlapBytes);
@@ -209,7 +209,7 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 			GDALRasterBand* rb = ds->GetRasterBand(b + 1);
 			if (!rb) continue;
 
-			// ¶ÁÈ¡ÖØµşÇøÓò
+			// è¯»å–é‡å åŒºåŸŸ
 			CPLErr err = rb->RasterIO(GF_Read, overlapX0, overlapY0, overlapW, overlapH,
 									 tempBuf, overlapW, overlapH, gdalType,
 									 0, 0);
@@ -220,20 +220,20 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 				break;
 			}
 
-			// ¿½±´µ½Ä¿±ê»º³åµÄÕıÈ·Î»ÖÃ
+			// æ‹·è´åˆ°ç›®æ ‡ç¼“å†²çš„æ­£ç¡®ä½ç½®
 			char* bandPtr = basePtr + static_cast<size_t>(b) * bandElemCount * bytesPerPixel;
-			// Ä¿±êÆğÊ¼Æ«ÒÆ£¨ÏñËØ£©
+			// ç›®æ ‡èµ·å§‹åç§»ï¼ˆåƒç´ ï¼‰
 			int dstX0 = overlapX0 - desiredReadX; // >=0
 			int dstY0 = overlapY0 - desiredReadY; // >=0
 
-			// °´ĞĞ¿½±´
+			// æŒ‰è¡Œæ‹·è´
 			for (int row = 0; row < overlapH; ++row) {
 				char* srcRow = static_cast<char*>(tempBuf) + static_cast<size_t>(row) * overlapW * bytesPerPixel;
 				char* dstRow = bandPtr + (static_cast<size_t>(dstY0 + row) * static_cast<size_t>(desiredReadW) + static_cast<size_t>(dstX0)) * bytesPerPixel;
 				std::memcpy(dstRow, srcRow, static_cast<size_t>(overlapW) * bytesPerPixel);
 			}
 
-			// ±£´æ NoData Öµ£¨ÈçÓĞ£©
+			// ä¿å­˜ NoData å€¼ï¼ˆå¦‚æœ‰ï¼‰
 			int hasNoData = 0;
 			double nd = rb->GetNoDataValue(&hasNoData);
 			if (hasNoData) {
@@ -258,7 +258,7 @@ static bool ReadTileInternal(GDALDataset* ds, int tileX, int tileY, int tileW, i
 	rr->bandOffsets.clear();
 	rr->errorMessage.clear();
 
-	// Ìî³ä spec£¨Èç¹ûĞèÒª£©¡ª¡ªÊ¹ÓÃÆÚÍû´°¿Ú£¨¿ÉÄÜ³¬³öÍ¼Ïñ£©
+	// å¡«å…… specï¼ˆå¦‚æœéœ€è¦ï¼‰â€”â€”ä½¿ç”¨æœŸæœ›çª—å£ï¼ˆå¯èƒ½è¶…å‡ºå›¾åƒï¼‰
 	if (spec) {
 		spec->tileX = tileX;
 		spec->tileY = tileY;
@@ -284,7 +284,7 @@ bool ImageBlockReader::next(ReadResult** out, BlockSpec* spec) {
 		return false;
 	}
 
-	// ¼ÆËãµ±Ç° tile µÄÂß¼­×ø±ê£¨ÔÚ range_ ÄÚ£©
+	// è®¡ç®—å½“å‰ tile çš„é€»è¾‘åæ ‡ï¼ˆåœ¨ range_ å†…ï¼‰
 	int tileX = range_.x + curXIdx_ * blockW_;
 	int tileY = range_.y + curYIdx_ * blockH_;
 	int tileW = std::min(blockW_, range_.x + range_.width - tileX);
@@ -292,13 +292,13 @@ bool ImageBlockReader::next(ReadResult** out, BlockSpec* spec) {
 
 	bool ok = ReadTileInternal(ds_, tileX, tileY, tileW, tileH, padding_, range_, imgW_, imgH_, blockW_, blockH_, out, spec);
 	if (!ok) {
-		// Ìø¹ı²¢¼ÌĞøµ½ÏÂÒ»¸ö£¨±£³ÖÓëÔ­ĞĞÎªÒ»ÖÂ£©
+		// è·³è¿‡å¹¶ç»§ç»­åˆ°ä¸‹ä¸€ä¸ªï¼ˆä¿æŒä¸åŸè¡Œä¸ºä¸€è‡´ï¼‰
 		++curXIdx_;
 		if (curXIdx_ >= tilesX_) { curXIdx_ = 0; ++curYIdx_; }
 		return next(out, spec);
 	}
 
-	// Ç°½øË÷Òı²¢±ê¼Ç
+	// å‰è¿›ç´¢å¼•å¹¶æ ‡è®°
 	++processed_;
 	++curXIdx_;
 	if (curXIdx_ >= tilesX_) {
@@ -309,7 +309,7 @@ bool ImageBlockReader::next(ReadResult** out, BlockSpec* spec) {
 	return true;
 }
 
-// ĞÂÔö£º¸ù¾İ·Ö¿éÈ«¾ÖË÷Òı¶ÁÈ¡£¬²»¸Ä±äÄÚ²¿µü´ú×´Ì¬
+// æ–°å¢ï¼šæ ¹æ®åˆ†å—å…¨å±€ç´¢å¼•è¯»å–ï¼Œä¸æ”¹å˜å†…éƒ¨è¿­ä»£çŠ¶æ€
 bool ImageBlockReader::readBlockByIndex(int index, ReadResult** out, BlockSpec* spec) {
 	if (!out) return false;
 	*out = nullptr;
@@ -327,7 +327,7 @@ bool ImageBlockReader::readBlockByIndex(int index, ReadResult** out, BlockSpec* 
 	return ReadTileInternal(ds_, tileX, tileY, tileW, tileH, padding_, range_, imgW_, imgH_, blockW_, blockH_, out, spec);
 }
 
-// ---------------- C API ÊµÏÖ ----------------
+// ---------------- C API å®ç° ----------------
 extern "C" {
 
 RSTOOLS_API void* RSTools_ImageBlockReader_Create(const char* path, int blockWidth, int blockHeight, int padding, const ReadArea* range) {
@@ -386,7 +386,7 @@ RSTOOLS_API bool RSTools_ImageBlockReader_Next(void* handle, ReadResult** out, B
 	return p->next(out, spec);
 }
 
-// ĞÂÔö C API£º°´Ë÷Òı¶ÁÈ¡Ö¸¶¨·Ö¿é
+// æ–°å¢ C APIï¼šæŒ‰ç´¢å¼•è¯»å–æŒ‡å®šåˆ†å—
 RSTOOLS_API bool RSTools_ImageBlockReader_ReadByIndex(void* handle, int index, ReadResult** out, BlockSpec* spec) {
 	if (!handle || !out) return false;
 	ImageBlockReader* p = static_cast<ImageBlockReader*>(handle);
