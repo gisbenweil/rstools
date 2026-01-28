@@ -5,13 +5,10 @@
 #include <memory>
 #include <GDALImageBase.h>
 
-#include <opencv2/opencv.hpp>
 #include <opencv2/video/tracking.hpp>
-#include <vector>
 #include <chrono>
 #include <filesystem>
 #include "../RSTools/ImageBlockWriter.h"
-#include "GDALImageBase.h"
 #include <string>
 
 // 工具函数：获取数据类型大小
@@ -61,6 +58,13 @@ cv::Mat convertToCVMat(const ReadResult& result, int bandIndex = 0);
 cv::Mat toFloatMat(const ReadResult* res, int bandIndex = 0);
 std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray);
 
+void removeOutliersUsingStats(
+    std::vector<cv::Point2f>& points1,
+    std::vector<cv::Point2f>& points2,
+    std::vector<uchar>& status,
+    float maxStdDevMultiplier = 2.0f);
+
+
 class OpticalFlowOffset {
 private:
     cv::Mat prev_gray, curr_gray;
@@ -94,7 +98,7 @@ public:
         const GeoTransform& gt,
         const std::string& projectionWkt,
         InterpMethod method = TPS_GLOBAL,
-        float kernelSigma = 10.0f,
+        float kernelSigma = 50.0f,
         int kernelRadius = 15,
         double regularization = 1e-3,
         int maxGlobalPoints = 1500);

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdint>
+#include <iostream>
 
 // Helper: map GDALDataType to ImageDataType (局部复制，与 GDALImageReader 中的映射一致)
 static ImageDataType MapGDALType(GDALDataType t) {
@@ -283,7 +284,6 @@ bool ImageBlockReader::next(ReadResult** out, BlockSpec* spec) {
 	if (curYIdx_ >= tilesY_) {
 		return false;
 	}
-
 	// 计算当前 tile 的逻辑坐标（在 range_ 内）
 	int tileX = range_.x + curXIdx_ * blockW_;
 	int tileY = range_.y + curYIdx_ * blockH_;

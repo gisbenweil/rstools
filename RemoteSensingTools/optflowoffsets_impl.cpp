@@ -36,6 +36,12 @@ bool OpticalFlowOffset::computeDenseToBlocks(
     double regularization,
     int maxGlobalPoints) {
 
+    removeOutliersUsingStats(
+        const_cast<std::vector<cv::Point2f>&>(prevPts),
+        const_cast<std::vector<cv::Point2f>&>(currPts),
+        const_cast<std::vector<uchar>&>(status),
+		5.0f);
+
     if (imgWidth <= 0 || imgHeight <= 0) return false;
 
     // collect valid matched points

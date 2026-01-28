@@ -6,6 +6,180 @@
 #include <numeric>
 #include "../RSTools/ImageBlockWriter.h"
 
+
+#include <opencv2/opencv.hpp>
+#include <vector>
+#include <cmath>
+
+/**
+ * 抽稀特征点 - 改进版混合特征检测器
+ * 使用距离阈值和网格划分来减少特征点密度
+ */
+std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray) {
+    std::vector<cv::Point2f> allPoints;
+
+    // 设置最小距离阈值，用于控制特征点密度
+    float minDistance = 15.0f;
+
+    // 1. 角点特征
+    std::vector<cv::Point2f> corners;
+    cv::goodFeaturesToTrack(gray, corners, 200, 0.01, minDistance);
+    allPoints.insert(allPoints.end(), corners.begin(), corners.end());
+
+    // 2. FAST特征
+    std::vector<cv::KeyPoint> fastKeypoints;
+    cv::Ptr<cv::FastFeatureDetector> fast = cv::FastFeatureDetector::create();
+    fast->detect(gray, fastKeypoints);
+
+    std::vector<cv::Point2f> fastPoints;
+    cv::KeyPoint::convert(fastKeypoints, fastPoints);
+
+    // 去除与角点太近的FAST点
+    for (const auto& pt : fastPoints) {
+        bool tooClose = false;
+        for (const auto& corner : corners) {
+            if (cv::norm(pt - corner) < minDistance) {
+                tooClose = true;
+                break;
+            }
+        }
+        if (!tooClose) {
+            allPoints.push_back(pt);
+        }
+    }
+
+    // 3. 网格采样补充（仅在低密度区域）
+    int gridSize = 40; // 增大网格尺寸以降低密度
+    std::vector<std::vector<bool>> gridOccupied(gray.rows / gridSize + 1,
+        std::vector<bool>(gray.cols / gridSize + 1, false));
+
+    // 标记已有特征点所在的网格
+    for (const auto& pt : allPoints) {
+        int gridX = static_cast<int>(pt.x) / gridSize;
+        int gridY = static_cast<int>(pt.y) / gridSize;
+        if (gridX < gridOccupied[0].size() && gridY < gridOccupied.size()) {
+            gridOccupied[gridY][gridX] = true;
+        }
+    }
+
+    // 在空网格中补充特征点
+    for (int y = gridSize; y < gray.rows; y += gridSize) {
+        for (int x = gridSize; x < gray.cols; x += gridSize) {
+            int gridX = x / gridSize;
+            int gridY = y / gridSize;
+
+            if (gridX < gridOccupied[0].size() && gridY < gridOccupied.size() && !gridOccupied[gridY][gridX]) {
+                allPoints.emplace_back(x, y);
+            }
+        }
+    }
+
+    // 4. 最终抽稀 - 使用非极大值抑制策略
+    std::vector<cv::Point2f> refinedPoints;
+    std::vector<bool> kept(allPoints.size(), true);
+
+    for (size_t i = 0; i < allPoints.size(); ++i) {
+        if (!kept[i]) continue;
+
+        for (size_t j = i + 1; j < allPoints.size(); ++j) {
+            if (cv::norm(allPoints[i] - allPoints[j]) < minDistance) {
+                kept[j] = false; // 标记为移除
+            }
+        }
+        refinedPoints.push_back(allPoints[i]);
+    }
+
+    return refinedPoints;
+}
+
+/**
+ * 额外的抽稀函数 - 使用K-means聚类进一步减少特征点数量
+ */
+std::vector<cv::Point2f> sparsifyWithClustering(const std::vector<cv::Point2f>& points, int maxPoints = 100) {
+    if (points.size() <= maxPoints) {
+        return points; // 不需要抽稀
+    }
+
+    // 使用K-means聚类减少点数
+    cv::Mat data(points.size(), 2, CV_32F);
+    for (size_t i = 0; i < points.size(); ++i) {
+        data.at<float>(i, 0) = points[i].x;
+        data.at<float>(i, 1) = points[i].y;
+    }
+
+    std::vector<int> labels;
+    cv::Mat centers;
+    cv::kmeans(data, maxPoints, labels,
+        cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 10, 1.0),
+        3, cv::KMEANS_PP_CENTERS, centers);
+
+    // 从每个聚类中心获取代表性点
+    std::vector<cv::Point2f> result;
+    for (int i = 0; i < maxPoints; ++i) {
+        result.emplace_back(centers.at<float>(i, 0), centers.at<float>(i, 1));
+    }
+
+    return result;
+}
+
+// 组合使用的示例函数
+std::vector<cv::Point2f> detectAndSparsifyFeatures(const cv::Mat& gray, int maxPoints = 100) {
+    auto initialPoints = detectHybridFeatures(gray);
+    return sparsifyWithClustering(initialPoints, maxPoints);
+}
+
+
+void removeOutliersUsingStats(
+    std::vector<cv::Point2f>& points1,
+    std::vector<cv::Point2f>& points2,
+    std::vector<uchar>& status,
+    float maxStdDevMultiplier) {
+
+    // 1. 计算运动向量
+    std::vector<cv::Point2f> motions;
+    std::vector<float> magnitudes;
+
+    for (size_t i = 0; i < status.size(); i++) {
+        if (status[i] == 1) {
+            cv::Point2f motion = points2[i] - points1[i];
+            motions.push_back(motion);
+            magnitudes.push_back(cv::norm(motion));
+        }
+    }
+
+    if (motions.empty()) return;
+
+    // 2. 计算运动向量的均值和标准差
+    cv::Scalar mean_motion, stddev_motion;
+    cv::meanStdDev(motions, mean_motion, stddev_motion);
+
+    // 3. 计算运动幅度的均值和标准差
+    cv::Scalar mean_mag, stddev_mag;
+    cv::meanStdDev(magnitudes, mean_mag, stddev_mag);
+
+    // 4. 基于3σ原则过滤异常点
+    float max_dx = mean_motion[0] + maxStdDevMultiplier * stddev_motion[0];
+    float min_dx = mean_motion[0] - maxStdDevMultiplier * stddev_motion[0];
+    float max_dy = mean_motion[1] + maxStdDevMultiplier * stddev_motion[1];
+    float min_dy = mean_motion[1] - maxStdDevMultiplier * stddev_motion[1];
+    float max_mag = mean_mag[0] + maxStdDevMultiplier * stddev_mag[0];
+
+    // 5. 过滤异常点
+    for (size_t i = 0; i < status.size(); i++) {
+        if (status[i] == 1) {
+            cv::Point2f motion = points2[i] - points1[i];
+            float mag = cv::norm(motion);
+
+            // 检查是否超出统计范围
+            if (motion.x < min_dx || motion.x > max_dx ||
+                motion.y < min_dy || motion.y > max_dy ||
+                mag > max_mag) {
+                status[i] = 0;  // 标记为异常点
+            }
+        }
+    }
+}
+
 SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
     const ReadResult& prevBlock,
     const ReadResult& currBlock) {
@@ -18,31 +192,65 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
             return result;
         }
 
-        if (prevBlock.width != currBlock.width ||
-            prevBlock.height != currBlock.height) {
-            result.success = false;
-            result.errorMessage = "Block dimensions do not match";
-            return result;
-        }
-
+        // 处理不同尺寸的影像，将较小的影像填充到较大影像的尺寸
+        cv::Mat prev_gray_original, curr_gray_original;
         if (prevBlock.bands > 1) {
-            prev_gray = convertToCVMat(prevBlock, 0);
-            curr_gray = convertToCVMat(currBlock, 0);
+            prev_gray_original = convertToCVMat(prevBlock, 0);
+            curr_gray_original = convertToCVMat(currBlock, 0);
         }
         else {
-            prev_gray = convertToCVMat(prevBlock, 0);
-            curr_gray = convertToCVMat(currBlock, 0);
+            prev_gray_original = convertToCVMat(prevBlock, 0);
+            curr_gray_original = convertToCVMat(currBlock, 0);
         }
 
-        if (prev_gray.empty() || curr_gray.empty()) {
+        if (prev_gray_original.empty() || curr_gray_original.empty()) {
             result.success = false;
             result.errorMessage = "One or both input frames are empty";
             return result;
         }
 
+        // 检查尺寸是否不同，如果不同则填充较小的影像
+        cv::Mat prev_gray, curr_gray;
+        if (prev_gray_original.size() != curr_gray_original.size()) {
+            // 获取最大尺寸
+            int max_rows = std::max(prev_gray_original.rows, curr_gray_original.rows);
+            int max_cols = std::max(prev_gray_original.cols, curr_gray_original.cols);
+
+            // 填充前影像
+            if (prev_gray_original.rows < max_rows || prev_gray_original.cols < max_cols) {
+                int pad_top = 0, pad_bottom = max_rows - prev_gray_original.rows;
+                int pad_left = 0, pad_right = max_cols - prev_gray_original.cols;
+                cv::copyMakeBorder(prev_gray_original, prev_gray, pad_top, pad_bottom, pad_left, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0));
+            }
+            else {
+                prev_gray = prev_gray_original;
+            }
+
+            // 填充后影像
+            if (curr_gray_original.rows < max_rows || curr_gray_original.cols < max_cols) {
+                int pad_top = 0, pad_bottom = max_rows - curr_gray_original.rows;
+                int pad_left = 0, pad_right = max_cols - curr_gray_original.cols;
+                cv::copyMakeBorder(curr_gray_original, curr_gray, pad_top, pad_bottom, pad_left, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0));
+            }
+            else {
+                curr_gray = curr_gray_original;
+            }
+
+            // 确保填充后的图像尺寸一致
+            if (prev_gray.size() != curr_gray.size()) {
+                // 如果仍然不一致，调整为相同尺寸
+                cv::resize(curr_gray, curr_gray, prev_gray.size());
+            }
+        }
+        else {
+            // 如果尺寸相同，则直接使用
+            prev_gray = prev_gray_original;
+            curr_gray = curr_gray_original;
+        }
+
         // 使用混合特征检测获得稀疏点
-        std::vector<cv::Point2f> points1 = detectHybridFeatures(prev_gray);
-        std::vector<cv::Point2f> points2 = detectHybridFeatures(curr_gray);
+        std::vector<cv::Point2f> points1 = detectAndSparsifyFeatures(prev_gray, 500);
+        std::vector<cv::Point2f> points2 = detectAndSparsifyFeatures(curr_gray, 500);
 
         // 使用LK光流精炼匹配（注意：这里调用者传入的points2并非直接对应，但后续筛选基于status/err）
         std::vector<uchar> status;
@@ -57,6 +265,8 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
         std::vector<cv::Point2f> good_points1;
         std::vector<cv::Point2f> good_points2;
 
+        removeOutliersUsingStats(points1, points2, status, 2.0);
+
         for (size_t i = 0; i < status.size(); i++) {
             if (status[i] == 1 && err[i] < 30.0) {
                 good_points1.push_back(points1[i]);
@@ -66,21 +276,21 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
 
         for (size_t i = 0; i < good_points1.size(); i++) {
             cv::circle(frame1_color, good_points1[i], 3, cv::Scalar(0, 255, 0), -1);
-            cv::circle(frame2_color, good_points2[i], 3, cv::Scalar(0, 0, 255), -1);
+            cv::circle(frame1_color, good_points2[i], 3, cv::Scalar(0, 0, 255), -1);
         }
 
-        cv::Mat combined;
-        cv::hconcat(frame1_color, frame2_color, combined);
+        //cv::Mat combined;
+        //cv::hconcat(frame1_color, frame2_color, combined);
         for (size_t i = 0; i < good_points1.size(); i++) {
             cv::Point pt2_in_combined = cv::Point(
-                good_points2[i].x + prev_gray.cols,
+                good_points2[i].x,
                 good_points2[i].y
             );
-            cv::line(combined, good_points1[i], pt2_in_combined,
+            cv::line(frame1_color, good_points1[i], pt2_in_combined,
                 cv::Scalar(255, 255, 0), 1);
         }
 
-        //cv::imshow("Optical Flow", combined);
+        //cv::imshow("Optical Flow", frame1_color);
         //cv::waitKey(0);
 
         result.prevPoints = good_points1;
@@ -100,12 +310,12 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
 DenseOpticalFlowResult calculateOpticalFlowStandard(
     const ReadResult& prevBlock,
     const ReadResult& currBlock,
-    double pyramidScale ,
-    int pyramidLevels ,
-    int windowSize ,
-    int iterations ,
-    int polyN ,
-    double polySigma ) {
+    double pyramidScale,
+    int pyramidLevels,
+    int windowSize,
+    int iterations,
+    int polyN,
+    double polySigma) {
 
     DenseOpticalFlowResult result;
 
@@ -181,7 +391,7 @@ DenseOpticalFlowResult calculateOpticalFlowStandard(
 }
 
 // 将左/右缓冲的第一波段转换为 CV_32F 矩阵（以读出的缓冲区为坐标）
-cv::Mat toFloatMat (const ReadResult* res, int bandIndex) {
+cv::Mat toFloatMat(const ReadResult* res, int bandIndex) {
     if (!res) return cv::Mat();
     int w = res->width;
     int h = res->height;
@@ -241,10 +451,10 @@ cv::Mat toFloatMat (const ReadResult* res, int bandIndex) {
         break;
     }
     return m;
-    };
+};
 
 
-cv::Mat convertToCVMat(const ReadResult& result, int bandIndex ) {
+cv::Mat convertToCVMat(const ReadResult& result, int bandIndex) {
     if (!result.success || !result.data) {
         throw std::runtime_error("Invalid data in ReadResult");
     }
@@ -300,7 +510,8 @@ cv::Mat convertToCVMat(const ReadResult& result, int bandIndex ) {
             cv::minMaxLoc(mat, &minVal, &maxVal);
             if (maxVal - minVal > 1e-9) {
                 mat = (mat - minVal) * (255.0 / (maxVal - minVal));
-            } else {
+            }
+            else {
                 mat = cv::Mat::zeros(mat.size(), mat.type());
             }
             mat.convertTo(mat, CV_8UC1);
@@ -316,7 +527,8 @@ cv::Mat convertToCVMat(const ReadResult& result, int bandIndex ) {
             cv::minMaxLoc(mat, &minVal, &maxVal);
             if (maxVal - minVal > 1e-9) {
                 mat = (mat - minVal) * (255.0 / (maxVal - minVal));
-            } else {
+            }
+            else {
                 mat = cv::Mat::zeros(mat.size(), mat.type());
             }
             mat.convertTo(mat, CV_8UC1);
@@ -335,155 +547,4 @@ cv::Mat convertToCVMat(const ReadResult& result, int bandIndex ) {
     }
 
     return mat.clone(); // 返回深拷贝
-}
-
-// 多种特征检测器组合
-std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray) {
-    std::vector<cv::Point2f> allPoints;
-
-    // 1. 角点特征
-    std::vector<cv::Point2f> corners;
-    cv::goodFeaturesToTrack(gray, corners, 200, 0.01, 10);
-    allPoints.insert(allPoints.end(), corners.begin(), corners.end());
-
-    // 2. FAST特征
-    std::vector<cv::KeyPoint> fastKeypoints;
-    cv::Ptr<cv::FastFeatureDetector> fast = cv::FastFeatureDetector::create();
-    fast->detect(gray, fastKeypoints);
-
-    std::vector<cv::Point2f> fastPoints;
-    cv::KeyPoint::convert(fastKeypoints, fastPoints);
-
-    // 去除与角点太近的FAST点
-    for (const auto& pt : fastPoints) {
-        bool tooClose = false;
-        for (const auto& corner : corners) {
-            if (cv::norm(pt - corner) < 10) {
-                tooClose = true;
-                break;
-            }
-        }
-        if (!tooClose) {
-            allPoints.push_back(pt);
-        }
-    }
-
-    // 3. 网格采样补充
-    int gridSize = 30;
-    for (int y = gridSize; y < gray.rows; y += gridSize) {
-        for (int x = gridSize; x < gray.cols; x += gridSize) {
-            // 检查该区域是否已有特征点
-            bool hasPoint = false;
-            for (const auto& pt : allPoints) {
-                if (std::abs(pt.x - x) < gridSize / 2 &&
-                    std::abs(pt.y - y) < gridSize / 2) {
-                    hasPoint = true;
-                    break;
-                }
-            }
-            if (!hasPoint) {
-                allPoints.emplace_back(x, y);
-            }
-        }
-    }
-
-    return allPoints;
-}
-
-// 新增：对外入口函数 — 计算密集偏移并按块写入 GeoTIFF
-bool OpticalFlowOffset::computeDenseOffsetsAndSaveBlocks(const ReadResult& prevBlock,
-    const ReadResult& currBlock,
-    int blockWidth,
-    int blockHeight,
-    const std::string& outPath,
-    const GeoTransform& gt,
-    const std::string& projectionWkt,
-    float kernelSigma,
-    int kernelRadius) {
-
-    try {
-        // 调用稀疏匹配计算
-        SparseOpticalFlowResult sparse = this->calculateOpticalFlowOffset(prevBlock, currBlock);
-        if (!sparse.success) return false;
-        if (prevBlock.width <= 0 || prevBlock.height <= 0) return false;
-
-        int cols = prevBlock.width;
-        int rows = prevBlock.height;
-
-        // 使用更精细的RBF插值代替简单高斯局部权重
-        // 简单RBF实现：基于高斯RBF, 但为避免求解全局线性系统（大），使用局部RBF求解每个块
-
-        // 创建输出写器：2波段，band0 = x offset, band1 = y offset
-        ImageBlockWriter writer(outPath, cols, rows, 2, gt, projectionWkt);
-        if (!writer.isOpen()) return false;
-
-        // 遍历每个块，局部采样稀疏点并用RBF插值
-        for (int by = 0; by < rows; by += blockHeight) {
-            for (int bx = 0; bx < cols; bx += blockWidth) {
-                int w = std::min(blockWidth, cols - bx);
-                int h = std::min(blockHeight, rows - by);
-
-                // 收集落在局部扩展窗口内的点（扩展 radius）
-                int ext = kernelRadius * 2;
-                int sx = std::max(0, bx - ext);
-                int sy = std::max(0, by - ext);
-                int ex = std::min(cols - 1, bx + w + ext);
-                int ey = std::min(rows - 1, by + h + ext);
-
-                std::vector<cv::Point2f> srcPts;
-                std::vector<float> valX, valY;
-                for (size_t i = 0; i < sparse.prevPoints.size(); ++i) {
-                    if (i < sparse.status.size() && sparse.status[i] == 0) continue;
-                    auto p = sparse.prevPoints[i];
-                    if (p.x >= sx && p.x <= ex && p.y >= sy && p.y <= ey) {
-                        srcPts.push_back(p);
-                        valX.push_back(sparse.currPoints[i].x - p.x);
-                        valY.push_back(sparse.currPoints[i].y - p.y);
-                    }
-                }
-
-                // 准备输出块缓冲
-                std::vector<float> bufX(w * h, std::numeric_limits<float>::quiet_NaN());
-                std::vector<float> bufY(w * h, std::numeric_limits<float>::quiet_NaN());
-
-                if (!srcPts.empty()) {
-                    // 局部RBF插值：使用高斯核，并做正规化加权（类似核RBF近似）
-                    const float eps = 1e-6f;
-                    const float twoSigma2 = 2.0f * kernelSigma * kernelSigma;
-                    for (int yy = 0; yy < h; ++yy) {
-                        for (int xx = 0; xx < w; ++xx) {
-                            int gx = bx + xx;
-                            int gy = by + yy;
-                            float numX = 0.0f, den = 0.0f;
-                            float numY = 0.0f;
-                            for (size_t k = 0; k < srcPts.size(); ++k) {
-                                float dx = gx - srcPts[k].x;
-                                float dy = gy - srcPts[k].y;
-                                float r2 = dx * dx + dy * dy + eps;
-                                float wgt = std::exp(-r2 / twoSigma2);
-                                numX += valX[k] * wgt;
-                                numY += valY[k] * wgt;
-                                den += wgt;
-                            }
-                            float vx = (den > eps) ? (numX / den) : 0.0f;
-                            float vy = (den > eps) ? (numY / den) : 0.0f;
-                            bufX[yy * w + xx] = vx;
-                            bufY[yy * w + xx] = vy;
-                        }
-                    }
-                }
-
-                // 写入当前块
-                const float* ptrs[2] = { bufX.data(), bufY.data() };
-                if (!writer.writeBlock(bx, by, w, h, ptrs)) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-    catch (const std::exception& e) {
-        return false;
-    }
 }
