@@ -247,10 +247,10 @@ int main(int argc, char** argv)
 
 
 
-	std::string lpath = "F:/变形测试/磐安县/磐安县.img";
-	std::string rpath = "F:/变形测试/磐安县.img";
-	//std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
-	//std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
+	//std::string lpath = "F:/变形测试/磐安县/磐安县.img";
+	//std::string rpath = "F:/变形测试/磐安县.img";
+	std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
+	std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
 
 	// 初始化 GDAL
 	RSTools_Initialize();
@@ -541,49 +541,64 @@ int main(int argc, char** argv)
 		std::cout << "开始密集插值处理..." << std::endl;
 		auto densifyStart = std::chrono::steady_clock::now();
 
-		bool ok = densifier.computeDenseToBlocks(allPrevPts, allCurrPts, allStatus,
-			cb.combinedWidth, cb.combinedHeight,
-			512, 512,
-			blocksOut, bufXOut, bufYOut,
-			method, kernelSigma, kernelRadius, regularization, maxGlobalPoints);
+		//bool ok = densifier.computeDenseToBlocks(allPrevPts, allCurrPts, allStatus,
+		//	cb.combinedWidth, cb.combinedHeight,
+		//	512, 512,
+		//	blocksOut, bufXOut, bufYOut,
+		//	method, kernelSigma, kernelRadius, regularization, maxGlobalPoints);
+        // NOTE: function signature in optflowoffsets.h is:
+        // computeDenseFromPointsAndSaveGeoTIFF(prevPts, currPts, status, imgWidth, imgHeight,
+        //   blockWidth, blockHeight, outPath, gt, projectionWkt, method, kernelSigma, kernelRadius,
+        //   regularization, maxGlobalPoints)
+        bool ok = densifier.computeDenseFromPointsAndSaveGeoTIFF(
+            allPrevPts, allCurrPts, allStatus,
+            cb.combinedWidth, cb.combinedHeight,
+            512, 512,
+            outOffsetPath,
+            cb.combinedGT,
+            linfo->projection,
+            method, kernelSigma, kernelRadius, regularization, maxGlobalPoints);
 
 		if (!ok) {
 			std::cerr << "computeDenseToBlocks failed" << std::endl;
 		}
-		else {
-			auto densifyEnd = std::chrono::steady_clock::now();
-			double densifyTime = std::chrono::duration_cast<std::chrono::duration<double>>(densifyEnd - densifyStart).count();
-			std::cout << "密集插值完成，耗时: " << densifyTime << "秒" << std::endl;
+		//else {
+		//	auto densifyEnd = std::chrono::steady_clock::now();
+		//	double densifyTime = std::chrono::duration_cast<std::chrono::duration<double>>(densifyEnd - densifyStart).count();
+		//	std::cout << "密集插值完成，耗时: " << densifyTime << "秒" << std::endl;
 
-			// write buffers to GeoTIFF using ImageBlockWriter in main thread sequentially
-			ImageBlockWriter writer(outOffsetPath, cb.combinedWidth, cb.combinedHeight, 2, cb.combinedGT, linfo->projection);
-			if (!writer.isOpen()) {
-				std::cerr << "无法创建输出文件: " << outOffsetPath << std::endl;
-			}
-			else {
-				for (size_t i = 0; i < blocksOut.size(); ++i) {
-					int bx, by, w, h; std::tie(bx, by, w, h) = blocksOut[i];
-					const float* ptrs[2] = { bufXOut[i].data(), bufYOut[i].data() };
-					if (!writer.writeBlock(bx, by, w, h, ptrs)) {
-						std::cerr << "写入块失败: " << bx << "," << by << std::endl;
-					}
+		//	// write buffers to GeoTIFF using ImageBlockWriter in main thread sequentially
+		//	// *** 修改点: 使用新的主构造函数，显式指定数据类型 ***
+		//	ImageBlockWriter writer(outOffsetPath, cb.combinedWidth, cb.combinedHeight, 2, cb.combinedGT, ImageDataType::Float32, linfo->projection);
+		//	if (!writer.isOpen()) {
+		//		std::cerr << "无法创建输出文件: " << outOffsetPath << std::endl;
+		//	}
+		//	else {
+		//		for (size_t i = 0; i < blocksOut.size(); ++i) {
+		//			int bx, by, w, h; std::tie(bx, by, w, h) = blocksOut[i];
+		//			// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
+		//			const void* ptrs[2] = { bufXOut[i].data(), bufYOut[i].data() };
+		//			if (!writer.writeBlock(bx, by, w, h, ptrs)) {
+		//				std::cerr << "写入块失败: " << bx << "," << by << std::endl;
+		//			}
 
-					// 显示插值写入进度
-					if ((i + 1) % 10 == 0 || i + 1 == blocksOut.size()) {
-						double percent = (i + 1) * 100.0 / blocksOut.size();
-						std::cout << "\r插值写入进度: " << (i + 1) << "/" << blocksOut.size()
-							<< " (" << std::fixed << std::setprecision(1) << percent << "%)" << std::flush;
-						if (i + 1 == blocksOut.size()) std::cout << std::endl;
-					}
-				}
-				std::cout << "生成密集偏移 GeoTIFF 成功: " << outOffsetPath << std::endl;
-			}
-		}
+		//			// 显示插值写入进度
+		//			if ((i + 1) % 10 == 0 || i + 1 == blocksOut.size()) {
+		//				double percent = (i + 1) * 100.0 / blocksOut.size();
+		//				std::cout << "\r插值写入进度: " << (i + 1) << "/" << blocksOut.size()
+		//					<< " (" << std::fixed << std::setprecision(1) << percent << "%)" << std::flush;
+		//				if (i + 1 == blocksOut.size()) std::cout << std::endl;
+		//			}
+		//		}
+		//		std::cout << "生成密集偏移 GeoTIFF 成功: " << outOffsetPath << std::endl;
+		//	}
+		//}
 		// ----- 根据前影像与偏移反算生成后影像（优化的分块实现）-----
 		std::string reconPath = "F:/变形测试/reconstructed.tif";
-
+		ImageDataType reconDataType = linfo->dataType; // 使用与左影像相同的数据类型
 		// 创建输出writer
-		ImageBlockWriter reconWriter(reconPath, cb.combinedWidth, cb.combinedHeight, linfo->bands, cb.combinedGT, linfo->projection);
+		// *** 修改点: 使用新的主构造函数，使用 reconDataType ***
+		ImageBlockWriter reconWriter(reconPath, cb.combinedWidth, cb.combinedHeight, linfo->bands, cb.combinedGT, reconDataType, linfo->projection);
 		if (!reconWriter.isOpen()) {
 			std::cerr << "无法创建重建输出文件: " << reconPath << std::endl;
 		}
@@ -613,7 +628,6 @@ int main(int argc, char** argv)
 					flowY.setTo(cv::Scalar(std::numeric_limits<float>::quiet_NaN()));
 
 					// 从之前计算的密集偏移量中查找对应的数据
-					// 这里我们需要重构偏移量数据的访问方式
 					// 由于之前的代码将偏移量存储在bufXOut和bufYOut中，我们可以直接使用
 
 					// 找到对应的块索引
@@ -670,7 +684,8 @@ int main(int argc, char** argv)
 
 					if (minXVals.empty()) {
 						// 没有有效的偏移量，跳过此块或用NoData填充
-						std::vector<const float*> bandPtrs(linfo->bands, nullptr);
+						// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
+						std::vector<const void*> bandPtrs(linfo->bands, nullptr);
 						reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
 						continue;
 					}
@@ -691,7 +706,8 @@ int main(int argc, char** argv)
 
 					if (readW <= 0 || readH <= 0) {
 						// 无效读取区域
-						std::vector<const float*> bandPtrs(linfo->bands, nullptr);
+						// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
+						std::vector<const void*> bandPtrs(linfo->bands, nullptr);
 						reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
 						continue;
 					}
@@ -703,7 +719,8 @@ int main(int argc, char** argv)
 
 					if (!leftBlock || !leftBlock->success) {
 						if (leftBlock) RSTools_DestroyReadResult(leftBlock);
-						std::vector<const float*> bandPtrs(linfo->bands, nullptr);
+						// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
+						std::vector<const void*> bandPtrs(linfo->bands, nullptr);
 						reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
 						continue;
 					}
@@ -717,9 +734,10 @@ int main(int argc, char** argv)
 						leftBandFloats.push_back(bandFloat);
 					}
 
-					// 为输出分配内存
-					std::vector<std::vector<float>> outputBands(linfo->bands);
-					for (auto& band : outputBands) {
+					// 为输出分配内存 (根据 reconDataType 调整)
+					// 为了灵活性，我们先用 float 计算，最后再转为所需类型
+					std::vector<std::vector<float>> outputBandsFloat(linfo->bands);
+					for (auto& band : outputBandsFloat) {
 						band.resize(blockW * blockH, std::numeric_limits<float>::quiet_NaN());
 					}
 
@@ -749,18 +767,58 @@ int main(int argc, char** argv)
 							for (int b = 0; b < leftBandFloats.size(); ++b) {
 								float sampledValue = bilinearSample(leftBandFloats[b], localX, localY);
 								if (!std::isnan(sampledValue)) {
-									outputBands[b][y * blockW + x] = sampledValue;
+									outputBandsFloat[b][y * blockW + x] = sampledValue;
 								}
 							}
 						}
 					}
 
-					// 写入输出
-					std::vector<const float*> bandPtrs;
+					// 将 float 结果转换为最终输出数据类型
+					std::vector<std::vector<uint8_t>> finalOutputBands(linfo->bands); // 使用 uint8_t 作为通用容器
 					for (int b = 0; b < linfo->bands; ++b) {
-						bandPtrs.push_back(outputBands[b].data());
+						size_t element_size = 0;
+						switch (reconDataType) {
+						case ImageDataType::Byte: element_size = sizeof(uint8_t); break;
+						case ImageDataType::UInt16: element_size = sizeof(uint16_t); break;
+						case ImageDataType::Int16: element_size = sizeof(int16_t); break;
+						case ImageDataType::UInt32: element_size = sizeof(uint32_t); break;
+						case ImageDataType::Int32: element_size = sizeof(int32_t); break;
+						case ImageDataType::Float32: element_size = sizeof(float); break;
+						case ImageDataType::Float64: element_size = sizeof(double); break;
+						}
+						finalOutputBands[b].resize(blockW * blockH * element_size);
+
+						// 转换逻辑示例 (仅展示 Float32 和 Byte)
+						if (reconDataType == ImageDataType::Float32) {
+							float* dest_ptr = reinterpret_cast<float*>(finalOutputBands[b].data());
+							for (size_t i = 0; i < outputBandsFloat[b].size(); ++i) {
+								dest_ptr[i] = outputBandsFloat[b][i]; // 直接复制
+							}
+						}
+						else if (reconDataType == ImageDataType::Byte) {
+							uint8_t* dest_ptr = reinterpret_cast<uint8_t*>(finalOutputBands[b].data());
+							for (size_t i = 0; i < outputBandsFloat[b].size(); ++i) {
+								dest_ptr[i] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, outputBandsFloat[b][i]))); // 转换并截断
+							}
+						}
+						else {
+							// 其他类型转换逻辑应在此处实现
+							// 为简化，这里仍以 float 处理，实际应用中需补充
+							float* dest_ptr = reinterpret_cast<float*>(finalOutputBands[b].data());
+							for (size_t i = 0; i < outputBandsFloat[b].size(); ++i) {
+								dest_ptr[i] = outputBandsFloat[b][i];
+							}
+						}
 					}
 
+					// 创建指向最终数据的指针数组
+					// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
+					std::vector<const void*> bandPtrs;
+					for (int b = 0; b < linfo->bands; ++b) {
+						bandPtrs.push_back(finalOutputBands[b].data());
+					}
+
+					// 写入输出
 					reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
 
 					// 清理
