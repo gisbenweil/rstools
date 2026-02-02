@@ -247,10 +247,10 @@ int main(int argc, char** argv)
 
 
 
-	//std::string lpath = "F:/变形测试/磐安县/磐安县.img";
-	//std::string rpath = "F:/变形测试/磐安县.img";
-	std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
-	std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
+	std::string lpath = "F:/变形测试/磐安县/磐安县.img";
+	std::string rpath = "F:/变形测试/磐安县.img";
+	//std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
+	//std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
 
 	// 初始化 GDAL
 	RSTools_Initialize();
@@ -531,7 +531,7 @@ int main(int argc, char** argv)
 		std::vector<std::tuple<int, int, int, int>> blocksOut;
 		std::vector<std::vector<float>> bufXOut, bufYOut;
 		// parameters
-		OpticalFlowOffset::InterpMethod method = OpticalFlowOffset::IDW_LOCAL;
+		InterpMethod method = INTERP_IDW_LOCAL;
 		float kernelSigma = 50.0f;
 		int kernelRadius = 60;
 		double regularization = 1e-3;
@@ -550,14 +550,21 @@ int main(int argc, char** argv)
         // computeDenseFromPointsAndSaveGeoTIFF(prevPts, currPts, status, imgWidth, imgHeight,
         //   blockWidth, blockHeight, outPath, gt, projectionWkt, method, kernelSigma, kernelRadius,
         //   regularization, maxGlobalPoints)
-        bool ok = densifier.computeDenseFromPointsAndSaveGeoTIFF(
+
+		ImageBlockWriter writer(outOffsetPath, cb.combinedWidth, cb.combinedHeight, 2, cb.combinedGT, linfo->projection);
+		InterpMethod inter_method = InterpMethod::INTERP_IDW_LOCAL;
+		bool ok = densifier.computeDenseFromPointsAndSaveGeoTIFF(allPrevPts, allCurrPts,
+			cb.combinedWidth, cb.combinedHeight,
+			writer, inter_method,
+			kernelSigma, kernelRadius,512,512);
+       /* bool ok = densifier.computeDenseFromPointsAndSaveGeoTIFF(
             allPrevPts, allCurrPts, allStatus,
             cb.combinedWidth, cb.combinedHeight,
             512, 512,
             outOffsetPath,
             cb.combinedGT,
             linfo->projection,
-            method, kernelSigma, kernelRadius, regularization, maxGlobalPoints);
+            method, kernelSigma, kernelRadius, regularization, maxGlobalPoints);*/
 
 		if (!ok) {
 			std::cerr << "computeDenseToBlocks failed" << std::endl;

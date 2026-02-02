@@ -1,233 +1,10 @@
-#include "optflowoffsets.h"
-#include "../RSTools/ImageBlockWriter.h"
-#include "../RSTools/ImageBlockReader.h"
-#include "../RSTools/GDALImageReader.h"
+﻿#include "dense_interpolation.h" // 假设包含头文件声明（见下方说明）
 #include <opencv2/opencv.hpp>
+#include <opencv2/flann.hpp>
 #include <vector>
 #include <cmath>
 #include <limits>
-#include <thread>
-#include <mutex>
-#include <atomic>
 #include <algorithm>
-#include <map>
-#include <opencv2/flann.hpp>
-
-using namespace std;
-
-static double tpsU(double r) {
-	if (r <= 1e-12) return 0.0;
-	double r2 = r * r;
-	return r2 * log(r2);
-}
-
-// ---------------------------------------------------------------------------
-// Reconstruct pre-image using dense offsets stored in a GeoTIFF (offsetsPath).
-// For each block in offsets.tif, read the corresponding offsets (dx,dy),
-// read the necessary region from the pre-image (prePath) and perform
-// inverse mapping (dst <- src at dst - offset) and write output block to outPath.
-// This implementation assumes offsets image and pre-image share the same
-// pixel grid / alignment.
-// ---------------------------------------------------------------------------
-
-static float bilinearSampleFloat(const cv::Mat& img, double x, double y) {
-	if (x < 0 || y < 0 || x >= img.cols - 1 || y >= img.rows - 1) {
-		int ix = static_cast<int>(std::floor(x + 0.5));
-		int iy = static_cast<int>(std::floor(y + 0.5));
-		if (ix >= 0 && iy >= 0 && ix < img.cols && iy < img.rows) return img.at<float>(iy, ix);
-		return std::numeric_limits<float>::quiet_NaN();
-	}
-	int x0 = static_cast<int>(std::floor(x));
-	int y0 = static_cast<int>(std::floor(y));
-	int x1 = x0 + 1;
-	int y1 = y0 + 1;
-	float dx = static_cast<float>(x - x0);
-	float dy = static_cast<float>(y - y0);
-	float v00 = img.at<float>(y0, x0);
-	float v10 = img.at<float>(y0, x1);
-	float v01 = img.at<float>(y1, x0);
-	float v11 = img.at<float>(y1, x1);
-	float v0 = v00 * (1.0f - dx) + v10 * dx;
-	float v1 = v01 * (1.0f - dx) + v11 * dx;
-	return v0 * (1.0f - dy) + v1 * dy;
-}
-
-static bool copyBandToFloat(const ReadResult* rr, int bandIndex, std::vector<float>& out) {
-	if (!rr || !rr->success) return false;
-	if (bandIndex < 0 || bandIndex >= rr->bands) return false;
-	int w = rr->width, h = rr->height; size_t n = static_cast<size_t>(w) * h;
-	out.assign(n, std::numeric_limits<float>::quiet_NaN());
-	switch (rr->dataType) {
-	case ImageDataType::Float32: {
-		const float* src = rr->getBandData<float>(bandIndex);
-		if (!src) return false;
-		for (size_t i = 0; i < n; ++i) out[i] = src[i];
-		return true;
-	}
-	case ImageDataType::Float64: {
-		const double* src = rr->getBandData<double>(bandIndex);
-		if (!src) return false;
-		for (size_t i = 0; i < n; ++i) out[i] = static_cast<float>(src[i]);
-		return true;
-	}
-	case ImageDataType::Byte: {
-		const uint8_t* src = rr->getBandData<uint8_t>(bandIndex);
-		if (!src) return false;
-		for (size_t i = 0; i < n; ++i) out[i] = static_cast<float>(src[i]);
-		return true;
-	}
-	case ImageDataType::UInt16: {
-		const uint16_t* src = rr->getBandData<uint16_t>(bandIndex);
-		if (!src) return false;
-		for (size_t i = 0; i < n; ++i) out[i] = static_cast<float>(src[i]);
-		return true;
-	}
-	case ImageDataType::Int16: {
-		const int16_t* src = rr->getBandData<int16_t>(bandIndex);
-		if (!src) return false;
-		for (size_t i = 0; i < n; ++i) out[i] = static_cast<float>(src[i]);
-		return true;
-	}
-	case ImageDataType::Int32: {
-		const int32_t* src = rr->getBandData<int32_t>(bandIndex);
-		if (!src) return false;
-		for (size_t i = 0; i < n; ++i) out[i] = static_cast<float>(src[i]);
-		return true;
-	}
-	case ImageDataType::UInt32: {
-		const uint32_t* src = rr->getBandData<uint32_t>(bandIndex);
-		if (!src) return false;
-		for (size_t i = 0; i < n; ++i) out[i] = static_cast<float>(src[i]);
-		return true;
-	}
-	default:
-		return false;
-	}
-}
-
-extern "C" bool RSTools_ReconstructFromOffsets(const char* offsetsPath, const char* prePath, const char* outPath, int blockWidth, int blockHeight) {
-	if (!offsetsPath || !prePath || !outPath) return false;
-
-	ImageBlockReader offsReader(offsetsPath, std::max(1, blockWidth), std::max(1, blockHeight), 0);
-	if (!offsReader.isOpen()) return false;
-
-	ImageInfo* preInfo = RSTools_GetImageInfo(prePath);
-	if (!preInfo) return false;
-
-	int outW = offsReader.imageWidth();
-	int outH = offsReader.imageHeight();
-
-	ImageBlockWriter writer(outPath, outW, outH, preInfo->bands, preInfo->geoTransform, preInfo->projection);
-	if (!writer.isOpen()) { RSTools_DestroyImageInfo(preInfo); return false; }
-
-	ReadResult* offsRR = nullptr; BlockSpec spec;
-	while (offsReader.next(&offsRR, &spec)) {
-		if (!offsRR || !offsRR->success) { if (offsRR) RSTools_DestroyReadResult(offsRR); continue; }
-
-		int bw = offsRR->width; int bh = offsRR->height;
-		if (offsRR->bands < 2) { RSTools_DestroyReadResult(offsRR); continue; }
-
-		std::vector<float> offX, offY;
-		if (!copyBandToFloat(offsRR, 0, offX) || !copyBandToFloat(offsRR, 1, offY)) { RSTools_DestroyReadResult(offsRR); continue; }
-
-		// compute sampling region in pre image by sampling offsets
-		std::vector<double> minXs, minYs, maxXs, maxYs;
-		int stepY = std::max(1, bh / 10); int stepX = std::max(1, bw / 10);
-		for (int yy = 0; yy < bh; yy += stepY) {
-			for (int xx = 0; xx < bw; xx += stepX) {
-				size_t idx = yy * bw + xx;
-				float dx = offX[idx]; float dy = offY[idx];
-				if (std::isnan(dx) || std::isnan(dy)) continue;
-				double outAbsX = spec.tileX + xx;
-				double outAbsY = spec.tileY + yy;
-				double srcX = outAbsX - dx;
-				double srcY = outAbsY - dy;
-				minXs.push_back(srcX); minYs.push_back(srcY); maxXs.push_back(srcX); maxYs.push_back(srcY);
-			}
-		}
-
-		if (minXs.empty()) {
-			// write nodata block
-			std::vector<const float*> bandPtrs(preInfo->bands, nullptr);
-			writer.writeBlock(spec.tileX, spec.tileY, spec.tileWidth, spec.tileHeight, bandPtrs.data());
-			RSTools_DestroyReadResult(offsRR);
-			continue;
-		}
-
-		double readMinX = *std::min_element(minXs.begin(), minXs.end()) - 10;
-		double readMinY = *std::min_element(minYs.begin(), minYs.end()) - 10;
-		double readMaxX = *std::max_element(maxXs.begin(), maxXs.end()) + 10;
-		double readMaxY = *std::max_element(maxYs.begin(), maxYs.end()) + 10;
-
-		int readX = std::max(0, static_cast<int>(std::floor(readMinX)));
-		int readY = std::max(0, static_cast<int>(std::floor(readMinY)));
-		int readW = std::min(preInfo->width - readX, static_cast<int>(std::ceil(readMaxX)) - readX);
-		int readH = std::min(preInfo->height - readY, static_cast<int>(std::ceil(readMaxY)) - readY);
-
-		if (readW <= 0 || readH <= 0) {
-			std::vector<const float*> bandPtrs(preInfo->bands, nullptr);
-			writer.writeBlock(spec.tileX, spec.tileY, spec.tileWidth, spec.tileHeight, bandPtrs.data());
-			RSTools_DestroyReadResult(offsRR);
-			continue;
-		}
-
-		ReadResult* preRR = RSTools_ReadImage(prePath, readX, readY, readW, readH);
-		if (!preRR || !preRR->success) {
-			if (preRR) RSTools_DestroyReadResult(preRR);
-			std::vector<const float*> bandPtrs(preInfo->bands, nullptr);
-			writer.writeBlock(spec.tileX, spec.tileY, spec.tileWidth, spec.tileHeight, bandPtrs.data());
-			RSTools_DestroyReadResult(offsRR);
-			continue;
-		}
-
-		// convert preRR bands to float mats
-		std::vector<cv::Mat> preBandsFloat;
-		for (int b = 0; b < preRR->bands && b < preInfo->bands; ++b) {
-			std::vector<float> tmp; if (!copyBandToFloat(preRR, b, tmp)) { tmp.assign(static_cast<size_t>(readW) * readH, std::numeric_limits<float>::quiet_NaN()); }
-			cv::Mat m(readH, readW, CV_32F);
-			for (int ry = 0; ry < readH; ++ry) for (int rx = 0; rx < readW; ++rx) m.at<float>(ry, rx) = tmp[ry * readW + rx];
-			preBandsFloat.push_back(std::move(m));
-		}
-
-		// prepare output bands
-		int outBW = spec.tileWidth; int outBH = spec.tileHeight;
-		std::vector<std::vector<float>> outBands(preInfo->bands, std::vector<float>(static_cast<size_t>(outBW) * outBH, std::numeric_limits<float>::quiet_NaN()));
-
-		// inverse mapping
-		for (int y = 0; y < outBH; ++y) {
-			for (int x = 0; x < outBW; ++x) {
-				int localIdx = y * bw + x; // careful: bw may equal outBW but spec.readWidth may differ; use offset coords
-				int srcIdxX = (y * bw + x);
-				size_t idxOff = static_cast<size_t>(y) * bw + x;
-				if (idxOff >= offX.size() || idxOff >= offY.size()) continue;
-				float dx = offX[idxOff]; float dy = offY[idxOff];
-				if (std::isnan(dx) || std::isnan(dy)) continue;
-				double outAbsX = spec.tileX + x;
-				double outAbsY = spec.tileY + y;
-				double srcAbsX = outAbsX - dx;
-				double srcAbsY = outAbsY - dy;
-				double localX = srcAbsX - readX;
-				double localY = srcAbsY - readY;
-				// sample each band
-				for (int b = 0; b < preBandsFloat.size(); ++b) {
-					float v = bilinearSampleFloat(preBandsFloat[b], localX, localY);
-					if (!std::isnan(v)) outBands[b][y * outBW + x] = v;
-				}
-			}
-		}
-
-		// prepare pointers and write
-		std::vector<const float*> ptrs(preInfo->bands, nullptr);
-		for (int b = 0; b < preInfo->bands; ++b) ptrs[b] = outBands[b].data();
-		writer.writeBlock(spec.tileX, spec.tileY, spec.tileWidth, spec.tileHeight, ptrs.data());
-
-		RSTools_DestroyReadResult(preRR);
-		RSTools_DestroyReadResult(offsRR);
-	}
-
-	RSTools_DestroyImageInfo(preInfo);
-	return true;
-}
 
 // ==============================
 // Helper: Wendland C2 CSRBF
@@ -243,7 +20,7 @@ inline float wendlandC2(float r, float supportRadius) {
 // Helper: Interpolate CSRBF at a single point
 // ==============================
 bool interpolateCSRBFAtPoint(
-    cv::flann::Index& flannIndex,  // �� �Ƴ��� const
+    cv::flann::Index& flannIndex,  // ← 移除了 const
     const std::vector<cv::Point2f>& controlPts,
     const std::vector<float>& values,
     float gx, float gy,
@@ -345,11 +122,11 @@ bool interpolateCSRBFAtPoint(
 // ==============================
 // Main Function 1: Save to GeoTIFF
 // ==============================
-bool OpticalFlowOffset::computeDenseFromPointsAndSaveGeoTIFF(
+bool computeDenseFromPointsAndSaveGeoTIFF(
     const std::vector<cv::Point2f>& prevPts,
     const std::vector<cv::Point2f>& currPts,
     int imgWidth, int imgHeight,
-    ImageBlockWriter& writer,
+    GeoTIFFWriter& writer,
     InterpMethod method,
     double kernelSigma,
     double kernelRadius,
@@ -373,7 +150,7 @@ bool OpticalFlowOffset::computeDenseFromPointsAndSaveGeoTIFF(
 
     if (validPrev.empty()) return false;
 
-    // Global methods (e.g., TPS_GLOBAL) �� not optimized here
+    // Global methods (e.g., TPS_GLOBAL) — not optimized here
     if (method == INTERP_TPS_GLOBAL) {
         // TODO: Keep original global TPS implementation
         // This version focuses on local methods
