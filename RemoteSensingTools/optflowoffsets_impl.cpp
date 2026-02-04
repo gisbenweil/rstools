@@ -390,7 +390,8 @@ bool OpticalFlowOffset::computeDenseFromPointsAndSaveGeoTIFF(
             features.at<float>(static_cast<int>(i), 1) = validPrev[i].y;
         }
         cv::flann::KDTreeIndexParams indexParams(4);
-        cv::flann::Index flannIndex(features, indexParams);
+        cv::flann::Index flannIndex;//(features, indexParams);
+		flannIndex.build(features, indexParams);
 
         float radius = static_cast<float>(kernelRadius > 0 ? kernelRadius : 50.0);
         const float eps = 1e-9f;
@@ -411,28 +412,28 @@ bool OpticalFlowOffset::computeDenseFromPointsAndSaveGeoTIFF(
 
                         if (method == INTERP_IDW_LOCAL) {
                             cv::Mat query = (cv::Mat_<float>(1, 2) << gx, gy);
-                            std::vector<std::vector<int>> indices;
-                            std::vector<std::vector<float>> dists;
-                            flannIndex.radiusSearch(query, indices, dists, radius,
-                                static_cast<int>(validPrev.size()),
-                                cv::flann::SearchParams(32));
+                           /* std::vector<std::vector<int>> indices;
+                            std::vector<std::vector<float>> dists;*/
+                            cv::Mat indices,dists;
+                            flannIndex.knnSearch(query, indices, dists, radius,
+                                50);
 
-                            if (!indices.empty() && !indices[0].empty()) {
+                            if (!indices.empty() && !indices.row(0).empty()) {
                                 double numX = 0.0, numY = 0.0, den = 0.0;
-                                const auto& idxList = indices[0];
-                                const auto& distList = dists[0];
-                                for (size_t j = 0; j < idxList.size(); ++j) {
-                                    int id = idxList[j];
-                                    float r2 = distList[j] + eps; // squared distance
-                                    float wgt = std::exp(-r2 / twoSigma2);
-                                    numX += pvx[id] * wgt;
-                                    numY += pvy[id] * wgt;
-                                    den += wgt;
-                                }
-                                if (den > eps) {
-                                    bufX[yy * w + xx] = static_cast<float>(numX / den);
-                                    bufY[yy * w + xx] = static_cast<float>(numY / den);
-                                }
+                                //const auto& idxList = indices[0];
+                                //const auto& distList = dists[0];
+                                //for (size_t j = 0; j < idxList.size(); ++j) {
+                                //    int id = idxList[j];
+                                //    float r2 = distList[j] + eps; // squared distance
+                                //    float wgt = std::exp(-r2 / twoSigma2);
+                                //    numX += pvx[id] * wgt;
+                                //    numY += pvy[id] * wgt;
+                                //    den += wgt;
+                                //}
+                                //if (den > eps) {
+                                //    bufX[yy * w + xx] = static_cast<float>(numX / den);
+                                //    bufY[yy * w + xx] = static_cast<float>(numY / den);
+                                //}
                             }
                         }
                         else if (method == INTERP_CSRBF) {

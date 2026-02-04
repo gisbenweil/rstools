@@ -50,14 +50,7 @@ struct SparseOpticalFlowResult {
 	std::string errorMessage;
 };
 
-DenseOpticalFlowResult calculateOpticalFlowStandard(const ReadResult& prevBlock,
-	const ReadResult& currBlock,
-	double pyramidScale = 0.5,
-	int pyramidLevels = 3,
-	int windowSize = 15,
-	int iterations = 3,
-	int polyN = 5,
-	double polySigma = 1.1);
+
 
 // 辅助函数：将ReadResult转换为OpenCV Mat
 cv::Mat convertToCVMat(const ReadResult& result, int bandIndex = 0);
@@ -114,20 +107,5 @@ public:
 		int blockWidth,
 		int blockHeight);
 
-	// 新增：从稀疏匹配点构建密集偏移并按块保存
-	// blockWidth/blockHeight: 每个保存块的像素大小
-	// outDir: 输出目录（必须存在）
-	// kernelSigma/kernelRadius: 插值核参数（sigma, 半径）
-	// New: compute dense offsets and save as GeoTIFF using ImageBlockWriter
-	// outPath: output GeoTIFF path
-	// gt/proj: geotransform and projection for output
-	//bool computeDenseOffsetsAndSaveBlocks(const ReadResult& prevBlock,
-	//	const ReadResult& currBlock,
-	//	int blockWidth,
-	//	int blockHeight,
-	//	const std::string& outPath,
-	//	const GeoTransform& gt,
-	//	const std::string& projectionWkt,
-	//	float kernelSigma = 10.0f,
-	//	int kernelRadius = 15);
+
 };

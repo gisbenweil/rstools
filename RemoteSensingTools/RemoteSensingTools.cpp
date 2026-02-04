@@ -247,10 +247,10 @@ int main(int argc, char** argv)
 
 
 
-	std::string lpath = "F:/变形测试/磐安县/磐安县.img";
-	std::string rpath = "F:/变形测试/磐安县.img";
-	//std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
-	//std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
+	//std::string lpath = "F:/变形测试/磐安县/磐安县.img";
+	//std::string rpath = "F:/变形测试/磐安县.img";
+	std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
+	std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
 
 	// 初始化 GDAL
 	RSTools_Initialize();
