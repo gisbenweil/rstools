@@ -29,5 +29,8 @@
     <ClInclude Include="optflowoffsets.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="rstoolsbase.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
