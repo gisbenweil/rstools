@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include <opencv2/opencv.hpp>
+#include <GDALImageBase.h>
+using namespace cv;
 // 双线性采样（输入为 single-channel CV_32F 图像）
 static float bilinearSample(const cv::Mat& img, double x, double y)
 {

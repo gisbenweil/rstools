@@ -1,4 +1,4 @@
-﻿RSTools\ImageBlockReader.h
+﻿
 #pragma once
 #include "GDALImageBase.h"
 #include <string>
