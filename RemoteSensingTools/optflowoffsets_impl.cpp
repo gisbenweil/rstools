@@ -1,4 +1,4 @@
-#include "optflowoffsets.h"
+Ôªø#include "optflowoffsets.h"
 #include "../RSTools/ImageBlockWriter.h"
 #include "../RSTools/ImageBlockReader.h"
 #include "../RSTools/GDALImageReader.h"
@@ -243,7 +243,7 @@ inline float wendlandC2(float r, float supportRadius) {
 // Helper: Interpolate CSRBF at a single point
 // ==============================
 bool interpolateCSRBFAtPoint(
-    cv::flann::Index& flannIndex,  // °˚ “∆≥˝¡À const
+    cv::flann::Index& flannIndex,  // ‚Üê ÁßªÈô§‰∫Ü const
     const std::vector<cv::Point2f>& controlPts,
     const std::vector<float>& values,
     float gx, float gy,
@@ -373,7 +373,7 @@ bool OpticalFlowOffset::computeDenseFromPointsAndSaveGeoTIFF(
 
     if (validPrev.empty()) return false;
 
-    // Global methods (e.g., TPS_GLOBAL) °™ not optimized here
+    // Global methods (e.g., TPS_GLOBAL) ‚Äî not optimized here
     if (method == INTERP_TPS_GLOBAL) {
         // TODO: Keep original global TPS implementation
         // This version focuses on local methods
@@ -412,28 +412,28 @@ bool OpticalFlowOffset::computeDenseFromPointsAndSaveGeoTIFF(
 
                         if (method == INTERP_IDW_LOCAL) {
                             cv::Mat query = (cv::Mat_<float>(1, 2) << gx, gy);
-                           /* std::vector<std::vector<int>> indices;
-                            std::vector<std::vector<float>> dists;*/
+                            //std::vector<std::vector<int>> indices;
+                            //std::vector<std::vector<float>> dists;
                             cv::Mat indices,dists;
-                            flannIndex.knnSearch(query, indices, dists, radius,
-                                50);
+                            flannIndex.knnSearch(query, indices, dists,static_cast<int>(10),              // k nearest
+                                cv::flann::SearchParams(50));
 
                             if (!indices.empty() && !indices.row(0).empty()) {
                                 double numX = 0.0, numY = 0.0, den = 0.0;
-                                //const auto& idxList = indices[0];
-                                //const auto& distList = dists[0];
-                                //for (size_t j = 0; j < idxList.size(); ++j) {
-                                //    int id = idxList[j];
-                                //    float r2 = distList[j] + eps; // squared distance
-                                //    float wgt = std::exp(-r2 / twoSigma2);
-                                //    numX += pvx[id] * wgt;
-                                //    numY += pvy[id] * wgt;
-                                //    den += wgt;
-                                //}
-                                //if (den > eps) {
-                                //    bufX[yy * w + xx] = static_cast<float>(numX / den);
-                                //    bufY[yy * w + xx] = static_cast<float>(numY / den);
-                                //}
+                                const auto& idxList = indices.row(0);
+                                const auto& distList = dists.row(0);
+                                for (size_t j = 0; j < indices.cols; ++j) {
+                                    int id = idxList.at<int>(j);
+                                    float r2 = distList.at<float>(j) + eps; // squared distance
+                                    float wgt = std::exp(-r2 / twoSigma2);
+                                    numX += pvx[id] * wgt;
+                                    numY += pvy[id] * wgt;
+                                    den += wgt;
+                                }
+                                if (den > eps) {
+                                    bufX[yy * w + xx] = static_cast<float>(numX / den);
+                                    bufY[yy * w + xx] = static_cast<float>(numY / den);
+                                }
                             }
                         }
                         else if (method == INTERP_CSRBF) {
