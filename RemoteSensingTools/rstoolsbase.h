@@ -105,3 +105,116 @@ static Mat createRGBImage(const ReadResult& result,
 
 	return rgb;
 }
+
+static std::string ImageDataTypeToString(ImageDataType t) {
+	using R = ImageDataType;
+	switch (t) {
+	case R::Byte: return "Byte";
+	case R::UInt16: return "UInt16";
+	case R::Int16: return "Int16";
+	case R::UInt32: return "UInt32";
+	case R::Int32: return "Int32";
+	case R::Float32: return "Float32";
+	case R::Float64: return "Float64";
+	default: return "Unknown";
+	}
+}
+
+// 结果结构：合并边界信息与偏移
+struct CombinedBoundsResult {
+	// 地理范围（经/投影单位）
+	double minX, maxX, minY, maxY;
+	// 合并画布的 GeoTransform（取左影像的像素参数）
+	GeoTransform combinedGT;
+	// 合并画布像素尺寸
+	int combinedWidth;
+	int combinedHeight;
+	// 左影像偏移（像素，浮点与整数）
+	double leftOffsetXf, leftOffsetYf;
+	int leftOffsetXi, leftOffsetYi;
+	// 右影像偏移（像素，浮点与整数）
+	double rightOffsetXf, rightOffsetYf;
+	int rightOffsetXi, rightOffsetYi;
+};
+
+// 计算两幅影像的合并地理边界，并返回每幅影像相对于合并边界的像素偏移。
+// 要求：两影像像素大小(pixelWidth, pixelHeight)相同（含符号、旋转也应一致或可接受）。
+static CombinedBoundsResult computeCombinedBounds(const ImageInfo* left, const ImageInfo* right) {
+	CombinedBoundsResult res{};
+	// 计算四角地理坐标（每幅影像）
+	auto cornersGeo = [](const ImageInfo* info) {
+		std::array<std::pair<double, double>, 4> corners;
+		// (0,0), (width,0), (0,height), (width,height)
+		info->geoTransform.pixelToGeo(0.0, 0.0, corners[0].first, corners[0].second);
+		info->geoTransform.pixelToGeo(info->width, 0.0, corners[1].first, corners[1].second);
+		info->geoTransform.pixelToGeo(0.0, info->height, corners[2].first, corners[2].second);
+		info->geoTransform.pixelToGeo(info->width, info->height, corners[3].first, corners[3].second);
+		return corners;
+		};
+
+	auto lc = cornersGeo(left);
+	auto rc = cornersGeo(right);
+
+	double lminX = std::min({ lc[0].first, lc[1].first, lc[2].first, lc[3].first });
+	double lmaxX = std::max({ lc[0].first, lc[1].first, lc[2].first, lc[3].first });
+	double lminY = std::min({ lc[0].second, lc[1].second, lc[2].second, lc[3].second });
+	double lmaxY = std::max({ lc[0].second, lc[1].second, lc[2].second, lc[3].second });
+
+	double rminX = std::min({ rc[0].first, rc[1].first, rc[2].first, rc[3].first });
+	double rmaxX = std::max({ rc[0].first, rc[1].first, rc[2].first, rc[3].first });
+	double rminY = std::min({ rc[0].second, rc[1].second, rc[2].second, rc[3].second });
+	double rmaxY = std::max({ rc[0].second, rc[1].second, rc[2].second, rc[3].second });
+
+	// 合并范围（地理坐标）
+	res.minX = std::min(lminX, rminX);
+	res.maxX = std::max(lmaxX, rmaxX);
+	res.minY = std::min(lminY, rminY);
+	res.maxY = std::max(lmaxY, rmaxY);
+	std::cout << "合并范围：" << res.minX << ", " << res.maxX << ", " << res.minY << ", " << res.maxY << std::endl;
+
+	// 构建合并画布的 GeoTransform：左上角为 (minX, maxY)
+	GeoTransform gt;// = left->geoTransform;
+	gt.xOrigin = res.minX;
+	gt.yOrigin = res.maxY;
+	gt.pixelHeight = left->geoTransform.pixelHeight;
+	gt.pixelWidth = left->geoTransform.pixelWidth;
+	gt.rotationX = left->geoTransform.rotationX;
+	gt.rotationY = left->geoTransform.rotationY;
+
+	// 保持 pixelWidth, pixelHeight, rotationX/Y 与 left 一致（已在调用处要求一致）
+	res.combinedGT = gt;
+
+	// 计算合并像素尺寸：将右下角 (maxX, minY) 转为像素坐标
+	double pxRight = 0.0, pyBottom = 0.0;
+	bool ok = res.combinedGT.geoToPixel(res.maxX, res.minY, pxRight, pyBottom);
+	if (!ok) {
+		// 若转换失败，返回零尺寸
+		res.combinedWidth = 0;
+		res.combinedHeight = 0;
+	}
+	else {
+		// 向上取整以包含边界
+		res.combinedWidth = static_cast<int>(std::ceil(pxRight));
+		res.combinedHeight = static_cast<int>(std::ceil(pyBottom));
+		if (res.combinedWidth < 0) res.combinedWidth = 0;
+		if (res.combinedHeight < 0) res.combinedHeight = 0;
+	}
+
+	// 计算左右影像左上角在合并画布中的像素位置
+	double lx = 0.0, ly = 0.0;
+	double rx = 0.0, ry = 0.0;
+	res.combinedGT.geoToPixel(left->geoTransform.xOrigin, left->geoTransform.yOrigin, lx, ly);
+	res.combinedGT.geoToPixel(right->geoTransform.xOrigin, right->geoTransform.yOrigin, rx, ry);
+
+	res.leftOffsetXf = lx;
+	res.leftOffsetYf = ly;
+	res.leftOffsetXi = static_cast<int>(std::ceil(lx));
+	res.leftOffsetYi = static_cast<int>(std::ceil(ly));
+
+	res.rightOffsetXf = rx;
+	res.rightOffsetYf = ry;
+	res.rightOffsetXi = static_cast<int>(std::ceil(rx));
+	res.rightOffsetYi = static_cast<int>(std::ceil(ry));
+
+	return res;
+}

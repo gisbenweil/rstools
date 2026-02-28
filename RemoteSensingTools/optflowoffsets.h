@@ -63,7 +63,13 @@ void removeOutliersUsingStats(
 	std::vector<cv::Point2f>& points2,
 	std::vector<uchar>& status,
 	float maxStdDevMultiplier = 2.0f);
-
+bool interpolateCSRBFAtPoint(
+	cv::flann::Index& flannIndex,  
+	const std::vector<cv::Point2f>& controlPts,
+	const std::vector<float>& values,
+	float gx, float gy,
+	float supportRadius,
+	float& outValue);
 
 class OpticalFlowOffset {
 private:
@@ -82,6 +88,16 @@ public:
 
 
 	bool computeDenseFromPointsAndSaveGeoTIFF(
+		const std::vector<cv::Point2f>& prevPts,
+		const std::vector<cv::Point2f>& currPts,
+		int imgWidth, int imgHeight,
+		ImageBlockWriter& writer,
+		InterpMethod method,
+		double kernelSigma,
+		double kernelRadius,
+		int blockWidth,
+		int blockHeight);
+	bool computeDenseFromPointsAndSaveGeoTIFF2(
 		const std::vector<cv::Point2f>& prevPts,
 		const std::vector<cv::Point2f>& currPts,
 		int imgWidth, int imgHeight,

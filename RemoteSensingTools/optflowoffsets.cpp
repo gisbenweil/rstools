@@ -265,7 +265,7 @@ SparseOpticalFlowResult OpticalFlowOffset::calculateOpticalFlowOffset(
         std::vector<cv::Point2f> good_points1;
         std::vector<cv::Point2f> good_points2;
 
-        removeOutliersUsingStats(points1, points2, status, 2.0);
+        removeOutliersUsingStats(points1, points2, status, 0.5);
 
         for (size_t i = 0; i < status.size(); i++) {
             if (status[i] == 1 && err[i] < 30.0) {
