@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <sstream>
+#include <filesystem>
 #include "rstoolsbase.h"
 #include "GDALImageBase.h"
 #include "GDALImageReader.h"
@@ -17,12 +18,14 @@
 #include "opencv2/opencv.hpp"
 
 #include "optflowoffsets.h"
+using namespace cv;
+using namespace std;
+
 
 // forward declaration for reconstruction implemented in optflowoffsets_impl.cpp
 extern "C" bool RSTools_ReconstructFromOffsets(const char* offsetsPath, const char* prePath, const char* outPath, int blockWidth, int blockHeight);
 
-using namespace cv;
-using namespace std;
+
 
 bool calculateOffsetsAndSave(string lpath,string rpath,string outOffsetPath)
 {
@@ -304,279 +307,96 @@ int main(int argc, char** argv)
 {
 
 
-	// 测试1：显示OpenCV版本
-	std::cout << "OpenCV Version: " << CV_VERSION << std::endl;
+    // 默认路径（可通过命令行替换）
+    //std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
+    //std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
+    //std::string outOffsetPath = "F:/变形测试/offsets_.tif";
+    //std::string reconPath = "F:/变形测试/reconstructed_.tif";
+	std::string lpath = "F:/变形测试/磐安县.img";
+	std::string rpath = "F:/变形测试/磐安县/磐安县.img";
+	std::string outOffsetPath = "F:/变形测试/offsets_pa_.tif";
+	std::string reconPath = "F:/变形测试/reconstructed_pa_.tif";
 
+    // 默认行为：计算偏移并重建
+    bool doComputeOffsets = true;
+    bool doReconstruct = true;
 
-
-	std::string lpath = "F:/变形测试/磐安县/磐安县.img";
-	std::string rpath = "F:/变形测试/磐安县.img";
-	//std::string lpath = "F:/变形测试/磐安县_clip_before1.tif";
-	//std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
-
-	// 偏移文件路径
-	std::string outOffsetPath = "F:/变形测试/offsets_pa.tif";
-	//左影像重建结果路径
-	std::string reconPath = "F:/变形测试/reconstructed_pa.tif";
-
-	// 初始化 GDAL
-	RSTools_Initialize();
-	bool ok = calculateOffsetsAndSave(lpath, rpath, outOffsetPath);
-	//bool ok = true;
-	
-	if (!ok) {
-		std::cerr << "computeDenseToBlocks failed" << std::endl;
-	}
-    else {
-        // 调用已实现的分块重建函数（在 optflowoffsets_impl.cpp 中实现）
-        bool recOk = RSTools_ReconstructFromOffsets(outOffsetPath.c_str(), lpath.c_str(), reconPath.c_str(), 512, 512);
-        if (!recOk) {
-            std::cerr << "Reconstruction from offsets failed" << std::endl;
-        }
-        else {
-            std::cout << "重建影像生成成功: " << reconPath << std::endl;
+    // 简单命令行解析（支持开关）
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--skip-offsets" || a == "--no-offsets") {
+            doComputeOffsets = false;
+        } else if (a == "--skip-recon" || a == "--no-recon") {
+            doReconstruct = false;
+        } else if (a == "--left" && i + 1 < argc) {
+            lpath = argv[++i];
+        } else if (a == "--right" && i + 1 < argc) {
+            rpath = argv[++i];
+        } else if (a == "--offsets" && i + 1 < argc) {
+            outOffsetPath = argv[++i];
+        } else if (a == "--recon" && i + 1 < argc) {
+            reconPath = argv[++i];
+        } else if (a == "--help" || a == "-h") {
+            std::cout << "Usage: " << argv[0] << " [--left <left.tif>] [--right <right.tif>] ";
+            std::cout << "[--offsets <offsets.tif>] [--recon <recon.tif>] [--skip-offsets] [--skip-recon]" << std::endl;
+            return 0;
         }
     }
-		
-	//	// ----- 根据前影像与偏移反算生成后影像（优化的分块实现）-----
 
-	//	ImageDataType reconDataType = linfo->dataType; // 使用与左影像相同的数据类型
-	//	// 创建输出writer
-	//	// *** 修改点: 使用新的主构造函数，使用 reconDataType ***
-	//	ImageBlockWriter reconWriter(reconPath, cb.combinedWidth, cb.combinedHeight, linfo->bands, cb.combinedGT, reconDataType, linfo->projection);
-	//	if (!reconWriter.isOpen()) {
-	//		std::cerr << "无法创建重建输出文件: " << reconPath << std::endl;
-	//	}
-	//	else {
-	//		// 使用与偏移量计算相同的块大小
-	//		const int reconBlockW = 512;
-	//		const int reconBlockH = 512;
-	//		int reconBlocksX = static_cast<int>(std::ceil(cb.combinedWidth / static_cast<double>(reconBlockW)));
-	//		int reconBlocksY = static_cast<int>(std::ceil(cb.combinedHeight / static_cast<double>(reconBlockH)));
+    // 初始化 GDAL
+    RSTools_Initialize();
 
-	//		std::cout << "开始分块重建影像，总块数: " << reconBlocksX * reconBlocksY << std::endl;
+    // 参数有效性检查
+    if (!doComputeOffsets && !doReconstruct) {
+        std::cerr << "Both compute and reconstruct are disabled. Nothing to do." << std::endl;
+        return 1;
+    }
 
-	//		// 为每个输出块进行处理
-	//		for (int by = 0; by < reconBlocksY; ++by) {
-	//			for (int bx = 0; bx < reconBlocksX; ++bx) {
-	//				int outX = bx * reconBlockW;
-	//				int outY = by * reconBlockH;
-	//				int blockW = std::min(reconBlockW, cb.combinedWidth - outX);
-	//				int blockH = std::min(reconBlockH, cb.combinedHeight - outY);
+    // 当需要计算偏移时，左/右影像必须存在
+    if (doComputeOffsets) {
+        if (!std::filesystem::exists(lpath)) {
+            std::cerr << "Left image not found: " << lpath << std::endl;
+            return 1;
+        }
+        if (!std::filesystem::exists(rpath)) {
+            std::cerr << "Right image not found: " << rpath << std::endl;
+            return 1;
+        }
+    }
 
-	//				// 查找对应的偏移量块（从之前计算的结果中）
-	//				cv::Mat flowX = cv::Mat::zeros(blockH, blockW, CV_32F);
-	//				cv::Mat flowY = cv::Mat::zeros(blockH, blockW, CV_32F);
+    // 当只重建时，偏移文件必须存在
+    if (doReconstruct && !doComputeOffsets) {
+        if (!std::filesystem::exists(outOffsetPath)) {
+            std::cerr << "Offsets file not found (required for reconstruction): " << outOffsetPath << std::endl;
+            return 1;
+        }
+    }
 
-	//				// 初始化为NaN
-	//				flowX.setTo(cv::Scalar(std::numeric_limits<float>::quiet_NaN()));
-	//				flowY.setTo(cv::Scalar(std::numeric_limits<float>::quiet_NaN()));
+    bool computeOk = true;
+    if (doComputeOffsets) {
+        computeOk = calculateOffsetsAndSave(lpath, rpath, outOffsetPath);
+        if (!computeOk) {
+            std::cerr << "computeOffsetsAndSave failed" << std::endl;
+        }
+    }
 
-	//				// 从之前计算的密集偏移量中查找对应的数据
-	//				// 由于之前的代码将偏移量存储在bufXOut和bufYOut中，我们可以直接使用
+    if (doReconstruct) {
+        // ensure offsets exist
+        if (!std::filesystem::exists(outOffsetPath)) {
+            std::cerr << "Offsets file not found for reconstruction: " << outOffsetPath << std::endl;
+            return 1;
+        }
+        // only attempt reconstruction if compute succeeded or compute was skipped
+        if (computeOk) {
+            bool recOk = RSTools_ReconstructFromOffsets(outOffsetPath.c_str(), lpath.c_str(), reconPath.c_str(), 2048, 2048);
+            if (!recOk) {
+                std::cerr << "Reconstruction from offsets failed" << std::endl;
+            } else {
+                std::cout << "重建影像生成成功: " << reconPath << std::endl;
+            }
+        }
+    }
 
-	//				// 找到对应的块索引
-	//				size_t blockIdx = by * reconBlocksX + bx;
-	//				if (blockIdx < bufXOut.size() && blockIdx < bufYOut.size()) {
-	//					const std::vector<float>& xData = bufXOut[blockIdx];
-	//					const std::vector<float>& yData = bufYOut[blockIdx];
-
-	//					// 验证数据大小
-	//					if (xData.size() >= static_cast<size_t>(blockW * blockH) &&
-	//						yData.size() >= static_cast<size_t>(blockW * blockH)) {
-
-	//						// 填充flowX和flowY
-	//						for (int y = 0; y < blockH; ++y) {
-	//							for (int x = 0; x < blockW; ++x) {
-	//								size_t idx = y * blockW + x;
-	//								flowX.at<float>(y, x) = xData[idx];
-	//								flowY.at<float>(y, x) = yData[idx];
-	//							}
-	//						}
-	//					}
-	//				}
-
-	//				// 现在我们有了当前块的偏移量，需要读取对应的左影像区域
-	//				// 计算当前输出块在左影像中的大致范围
-	//				std::vector<double> minXVals, minYVals, maxXVals, maxYVals;
-
-	//				// 采样偏移量来估计需要读取的左影像区域
-	//				for (int y = 0; y < blockH; y += std::max(1, blockH / 10)) {
-	//					for (int x = 0; x < blockW; x += std::max(1, blockW / 10)) {
-	//						float dx = flowX.at<float>(y, x);
-	//						float dy = flowY.at<float>(y, x);
-
-	//						if (!std::isnan(dx) && !std::isnan(dy)) {
-	//							// 输出位置
-	//							double outAbsX = outX + x;
-	//							double outAbsY = outY + y;
-
-	//							// 源位置（在左影像的合并坐标系中）
-	//							double srcXInCombined = outAbsX - dx;
-	//							double srcYInCombined = outAbsY - dy;
-
-	//							// 转换到左影像本地坐标
-	//							double srcXInLeft = srcXInCombined - cb.leftOffsetXf;
-	//							double srcYInLeft = srcYInCombined - cb.leftOffsetYf;
-
-	//							minXVals.push_back(srcXInLeft);
-	//							minYVals.push_back(srcYInLeft);
-	//							maxXVals.push_back(srcXInLeft);
-	//							maxYVals.push_back(srcYInLeft);
-	//						}
-	//					}
-	//				}
-
-	//				if (minXVals.empty()) {
-	//					// 没有有效的偏移量，跳过此块或用NoData填充
-	//					// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
-	//					std::vector<const void*> bandPtrs(linfo->bands, nullptr);
-	//					reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
-	//					continue;
-	//				}
-
-	//				// 计算读取区域（添加一些padding）
-	//				double readMinX = *std::min_element(minXVals.begin(), minXVals.end()) - 10;
-	//				double readMinY = *std::min_element(minYVals.begin(), minYVals.end()) - 10;
-	//				double readMaxX = *std::max_element(maxXVals.begin(), maxXVals.end()) + 10;
-	//				double readMaxY = *std::max_element(maxYVals.begin(), maxYVals.end()) + 10;
-
-	//				// 转换为整数像素坐标并裁剪到影像范围
-	//				int readX = std::max(0, static_cast<int>(std::floor(readMinX)));
-	//				int readY = std::max(0, static_cast<int>(std::floor(readMinY)));
-	//				int readW = std::min(linfo->width - readX,
-	//					static_cast<int>(std::ceil(readMaxX)) - readX);
-	//				int readH = std::min(linfo->height - readY,
-	//					static_cast<int>(std::ceil(readMaxY)) - readY);
-
-	//				if (readW <= 0 || readH <= 0) {
-	//					// 无效读取区域
-	//					// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
-	//					std::vector<const void*> bandPtrs(linfo->bands, nullptr);
-	//					reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
-	//					continue;
-	//				}
-
-	//				// 读取左影像块
-	//				ReadResult* leftBlock = RSTools_ReadImage(
-	//					lpath.c_str(), readX, readY, readW, readH
-	//				);
-
-	//				if (!leftBlock || !leftBlock->success) {
-	//					if (leftBlock) RSTools_DestroyReadResult(leftBlock);
-	//					// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
-	//					std::vector<const void*> bandPtrs(linfo->bands, nullptr);
-	//					reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
-	//					continue;
-	//				}
-
-	//				// 转换左影像块到float格式
-	//				std::vector<cv::Mat> leftBandFloats;
-	//				for (int b = 0; b < leftBlock->bands && b < linfo->bands; ++b) {
-	//					cv::Mat bandMat = convertToCVMat(*leftBlock, b);
-	//					cv::Mat bandFloat;
-	//					bandMat.convertTo(bandFloat, CV_32F);
-	//					leftBandFloats.push_back(bandFloat);
-	//				}
-
-	//				// 为输出分配内存 (根据 reconDataType 调整)
-	//				// 为了灵活性，我们先用 float 计算，最后再转为所需类型
-	//				std::vector<std::vector<float>> outputBandsFloat(linfo->bands);
-	//				for (auto& band : outputBandsFloat) {
-	//					band.resize(blockW * blockH, std::numeric_limits<float>::quiet_NaN());
-	//				}
-
-	//				// 执行反向映射
-	//				for (int y = 0; y < blockH; ++y) {
-	//					for (int x = 0; x < blockW; ++x) {
-	//						float dx = flowX.at<float>(y, x);
-	//						float dy = flowY.at<float>(y, x);
-
-	//						if (std::isnan(dx) || std::isnan(dy)) {
-	//							continue;
-	//						}
-
-	//						// 计算源位置
-	//						double outAbsX = outX + x;
-	//						double outAbsY = outY + y;
-	//						double srcXInCombined = outAbsX - dx;
-	//						double srcYInCombined = outAbsY - dy;
-	//						double srcXInLeft = srcXInCombined - cb.leftOffsetXf;
-	//						double srcYInLeft = srcYInCombined - cb.leftOffsetYf;
-
-	//						// 转换到左影像块的局部坐标
-	//						double localX = srcXInLeft - readX;
-	//						double localY = srcYInLeft - readY;
-
-	//						// 双线性采样
-	//						for (int b = 0; b < leftBandFloats.size(); ++b) {
-	//							float sampledValue = bilinearSample(leftBandFloats[b], localX, localY);
-	//							if (!std::isnan(sampledValue)) {
-	//								outputBandsFloat[b][y * blockW + x] = sampledValue;
-	//							}
-	//						}
-	//					}
-	//				}
-
-	//				// 将 float 结果转换为最终输出数据类型
-	//				std::vector<std::vector<uint8_t>> finalOutputBands(linfo->bands); // 使用 uint8_t 作为通用容器
-	//				for (int b = 0; b < linfo->bands; ++b) {
-	//					size_t element_size = 0;
-	//					switch (reconDataType) {
-	//					case ImageDataType::Byte: element_size = sizeof(uint8_t); break;
-	//					case ImageDataType::UInt16: element_size = sizeof(uint16_t); break;
-	//					case ImageDataType::Int16: element_size = sizeof(int16_t); break;
-	//					case ImageDataType::UInt32: element_size = sizeof(uint32_t); break;
-	//					case ImageDataType::Int32: element_size = sizeof(int32_t); break;
-	//					case ImageDataType::Float32: element_size = sizeof(float); break;
-	//					case ImageDataType::Float64: element_size = sizeof(double); break;
-	//					}
-	//					finalOutputBands[b].resize(blockW * blockH * element_size);
-
-	//					// 转换逻辑示例 (仅展示 Float32 和 Byte)
-	//					if (reconDataType == ImageDataType::Float32) {
-	//						float* dest_ptr = reinterpret_cast<float*>(finalOutputBands[b].data());
-	//						for (size_t i = 0; i < outputBandsFloat[b].size(); ++i) {
-	//							dest_ptr[i] = outputBandsFloat[b][i]; // 直接复制
-	//						}
-	//					}
-	//					else if (reconDataType == ImageDataType::Byte) {
-	//						uint8_t* dest_ptr = reinterpret_cast<uint8_t*>(finalOutputBands[b].data());
-	//						for (size_t i = 0; i < outputBandsFloat[b].size(); ++i) {
-	//							dest_ptr[i] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, outputBandsFloat[b][i]))); // 转换并截断
-	//						}
-	//					}
-	//					else {
-	//						// 其他类型转换逻辑应在此处实现
-	//						// 为简化，这里仍以 float 处理，实际应用中需补充
-	//						float* dest_ptr = reinterpret_cast<float*>(finalOutputBands[b].data());
-	//						for (size_t i = 0; i < outputBandsFloat[b].size(); ++i) {
-	//							dest_ptr[i] = outputBandsFloat[b][i];
-	//						}
-	//					}
-	//				}
-
-	//				// 创建指向最终数据的指针数组
-	//				// *** 修改点: 创建一个指针数组来传递给 writeBlock ***
-	//				std::vector<const void*> bandPtrs;
-	//				for (int b = 0; b < linfo->bands; ++b) {
-	//					bandPtrs.push_back(finalOutputBands[b].data());
-	//				}
-
-	//				// 写入输出
-	//				reconWriter.writeBlock(outX, outY, blockW, blockH, bandPtrs.data());
-
-	//				// 清理
-	//				RSTools_DestroyReadResult(leftBlock);
-	//			}
-	//		}
-
-	//		std::cout << "重建影像生成成功: " << reconPath << std::endl;
-	//	}
-	//}
-
-
-
-	std::cout << "---- 完成 ----\n";
-	return 0;
+    std::cout << "---- 完成 ----\n";
+    return 0;
 }
