@@ -18,6 +18,8 @@
 #include "opencv2/opencv.hpp"
 
 #include "optflowoffsets.h"
+#include "gdal_priv.h"
+#include "cpl_conv.h"
 using namespace cv;
 using namespace std;
 
@@ -27,7 +29,46 @@ extern "C" bool RSTools_ReconstructFromOffsets(const char* offsetsPath, const ch
 
 
 
-bool calculateOffsetsAndSave(string lpath,string rpath,string outOffsetPath)
+// build overviews (image pyramid) for a dataset file using GDAL
+static void buildOverviews(const std::string& path)
+{
+    GDALAllRegister();
+    GDALDataset* ds = static_cast<GDALDataset*>(GDALOpen(path.c_str(), GA_Update));
+    if (!ds) {
+        std::cerr << "Failed to open for overviews: " << path << std::endl;
+        return;
+    }
+
+    int width = ds->GetRasterXSize();
+    int height = ds->GetRasterYSize();
+    std::vector<int> levels;
+    int factor = 2;
+    while (true) {
+        if (width / factor < 1 || height / factor < 1) break;
+        levels.push_back(factor);
+        factor *= 2;
+        if (factor > 256) break; // safety cap
+    }
+
+    if (!levels.empty()) {
+        CPLErr err = ds->BuildOverviews("AVERAGE", static_cast<int>(levels.size()), levels.data(), 0,nullptr, nullptr,nullptr);
+
+        if (err != CE_None) {
+            std::cerr << "BuildOverviews failed for " << path << std::endl;
+        } else {
+            std::cout << "Overviews built for " << path << " (levels:";
+            for (size_t i = 0; i < levels.size(); ++i) {
+                if (i) std::cout << ",";
+                std::cout << levels[i];
+            }
+            std::cout << ")\n";
+        }
+    }
+
+    GDALClose(ds);
+}
+
+bool calculateOffsetsAndSave(string lpath,string rpath,string outOffsetPath, int blockSize)
 {
 	ImageInfo* linfo = RSTools_GetImageInfo(lpath.c_str());
 	ImageInfo* rinfo = RSTools_GetImageInfo(rpath.c_str());
@@ -145,9 +186,9 @@ bool calculateOffsetsAndSave(string lpath,string rpath,string outOffsetPath)
 		const int templW = templHalf * 2 + 1;
 		const int searchRadius = 16; // 在右影像中心周围搜索 +/-searchRadius
 
-		// prepare per-output-block containers to accumulate sparse matches during tile traversal
-		const int outBlockW = 512;
-		const int outBlockH = 512;
+        // prepare per-output-block containers to accumulate sparse matches during tile traversal
+        const int outBlockW = blockSize;
+        const int outBlockH = blockSize;
 		int blocksX = static_cast<int>(std::ceil(cb.combinedWidth / static_cast<double>(outBlockW)));
 		int blocksY = static_cast<int>(std::ceil(cb.combinedHeight / static_cast<double>(outBlockH)));
 		int totalBlocks = std::max(1, blocksX) * std::max(1, blocksY);
@@ -156,9 +197,9 @@ bool calculateOffsetsAndSave(string lpath,string rpath,string outOffsetPath)
 		std::vector<std::vector<cv::Point2f>> currPtsPerBlock(totalBlocks);
 		std::vector<std::vector<uchar>> statusPerBlock(totalBlocks);
 
-		// --- 进度信息准备 ---
-		const int readTileW = 512; // 与 ImageBlockReader 构造一致
-		const int readTileH = 512;
+        // --- 进度信息准备 ---
+        const int readTileW = blockSize; // 与 ImageBlockReader 构造一致
+        const int readTileH = blockSize;
 		int tilesX = static_cast<int>(std::ceil(leftArea.width / static_cast<double>(readTileW)));
 		int tilesY = static_cast<int>(std::ceil(leftArea.height / static_cast<double>(readTileH)));
 		int totalTiles = std::max(1, tilesX) * std::max(1, tilesY);
@@ -288,12 +329,16 @@ bool calculateOffsetsAndSave(string lpath,string rpath,string outOffsetPath)
 
 
 
-		ImageBlockWriter offset_writer(outOffsetPath, cb.combinedWidth, cb.combinedHeight, 2, cb.combinedGT, linfo->projection);
+        ImageBlockWriter offset_writer(outOffsetPath, cb.combinedWidth, cb.combinedHeight, 2, cb.combinedGT, linfo->projection);
 		InterpMethod inter_method = InterpMethod::INTERP_IDW_LOCAL;
         bool ok = densifier.computeDenseFromPointsAndSaveGeoTIFF2(allPrevPts, allCurrPts,
             cb.combinedWidth, cb.combinedHeight,
             offset_writer, inter_method,
             kernelSigma, kernelRadius, 1024, 1024);
+        if (ok) {
+            // build overviews for the offsets file
+            buildOverviews(outOffsetPath);
+        }
         return cleanup(ok);
 	}
     // 如果未进入上面的 hasGeoInfo 分支，仍需释放 info
@@ -312,90 +357,106 @@ int main(int argc, char** argv)
     //std::string rpath = "F:/变形测试/磐安县_clip_after1.tif";
     //std::string outOffsetPath = "F:/变形测试/offsets_.tif";
     //std::string reconPath = "F:/变形测试/reconstructed_.tif";
+
+
+
 	std::string lpath = "F:/变形测试/磐安县.img";
 	std::string rpath = "F:/变形测试/磐安县/磐安县.img";
 	std::string outOffsetPath = "F:/变形测试/offsets_pa_.tif";
 	std::string reconPath = "F:/变形测试/reconstructed_pa_.tif";
 
-    // 默认行为：计算偏移并重建
-    bool doComputeOffsets = true;
-    bool doReconstruct = true;
+	buildOverviews(outOffsetPath);
+	buildOverviews(reconPath);
 
-    // 简单命令行解析（支持开关）
-    for (int i = 1; i < argc; ++i) {
-        std::string a = argv[i];
-        if (a == "--skip-offsets" || a == "--no-offsets") {
-            doComputeOffsets = false;
-        } else if (a == "--skip-recon" || a == "--no-recon") {
-            doReconstruct = false;
-        } else if (a == "--left" && i + 1 < argc) {
-            lpath = argv[++i];
-        } else if (a == "--right" && i + 1 < argc) {
-            rpath = argv[++i];
-        } else if (a == "--offsets" && i + 1 < argc) {
-            outOffsetPath = argv[++i];
-        } else if (a == "--recon" && i + 1 < argc) {
-            reconPath = argv[++i];
-        } else if (a == "--help" || a == "-h") {
-            std::cout << "Usage: " << argv[0] << " [--left <left.tif>] [--right <right.tif>] ";
-            std::cout << "[--offsets <offsets.tif>] [--recon <recon.tif>] [--skip-offsets] [--skip-recon]" << std::endl;
-            return 0;
-        }
-    }
+    //// 默认行为：计算偏移并重建
+    //bool doComputeOffsets = true;
+    //bool doReconstruct = true;
+    //// 默认分块大小（用于读取/输出块）
+    //int blockSize = 512;
+    //// 重建时使用的分块大小（默认保持原来的较大值）
+    //int reconBlockSize = 2048;
 
-    // 初始化 GDAL
-    RSTools_Initialize();
+    //// 简单命令行解析（支持开关）
+    //for (int i = 1; i < argc; ++i) {
+    //    std::string a = argv[i];
+    //    if (a == "--skip-offsets" || a == "--no-offsets") {
+    //        doComputeOffsets = false;
+    //    } else if (a == "--skip-recon" || a == "--no-recon") {
+    //        doReconstruct = false;
+    //    } else if (a == "--left" && i + 1 < argc) {
+    //        lpath = argv[++i];
+    //    } else if (a == "--right" && i + 1 < argc) {
+    //        rpath = argv[++i];
+    //    } else if (a == "--offsets" && i + 1 < argc) {
+    //        outOffsetPath = argv[++i];
+    //    } else if (a == "--recon" && i + 1 < argc) {
+    //        reconPath = argv[++i];
+    //    } else if (a == "--block-size" && i + 1 < argc) {
+    //        blockSize = std::max(16, atoi(argv[++i]));
+    //    } else if (a == "--recon-block-size" && i + 1 < argc) {
+    //        reconBlockSize = std::max(16, atoi(argv[++i]));
+    //    } else if (a == "--help" || a == "-h") {
+    //        std::cout << "Usage: " << argv[0] << " [--left <left.tif>] [--right <right.tif>] ";
+    //        std::cout << "[--offsets <offsets.tif>] [--recon <recon.tif>] [--block-size <n>] [--recon-block-size <n>] [--skip-offsets] [--skip-recon]" << std::endl;
+    //        return 0;
+    //    }
+    //}
 
-    // 参数有效性检查
-    if (!doComputeOffsets && !doReconstruct) {
-        std::cerr << "Both compute and reconstruct are disabled. Nothing to do." << std::endl;
-        return 1;
-    }
+    //// 初始化 GDAL
+    //RSTools_Initialize();
 
-    // 当需要计算偏移时，左/右影像必须存在
-    if (doComputeOffsets) {
-        if (!std::filesystem::exists(lpath)) {
-            std::cerr << "Left image not found: " << lpath << std::endl;
-            return 1;
-        }
-        if (!std::filesystem::exists(rpath)) {
-            std::cerr << "Right image not found: " << rpath << std::endl;
-            return 1;
-        }
-    }
+    //// 参数有效性检查
+    //if (!doComputeOffsets && !doReconstruct) {
+    //    std::cerr << "Both compute and reconstruct are disabled. Nothing to do." << std::endl;
+    //    return 1;
+    //}
 
-    // 当只重建时，偏移文件必须存在
-    if (doReconstruct && !doComputeOffsets) {
-        if (!std::filesystem::exists(outOffsetPath)) {
-            std::cerr << "Offsets file not found (required for reconstruction): " << outOffsetPath << std::endl;
-            return 1;
-        }
-    }
+    //// 当需要计算偏移时，左/右影像必须存在
+    //if (doComputeOffsets) {
+    //    if (!std::filesystem::exists(lpath)) {
+    //        std::cerr << "Left image not found: " << lpath << std::endl;
+    //        return 1;
+    //    }
+    //    if (!std::filesystem::exists(rpath)) {
+    //        std::cerr << "Right image not found: " << rpath << std::endl;
+    //        return 1;
+    //    }
+    //}
 
-    bool computeOk = true;
-    if (doComputeOffsets) {
-        computeOk = calculateOffsetsAndSave(lpath, rpath, outOffsetPath);
-        if (!computeOk) {
-            std::cerr << "computeOffsetsAndSave failed" << std::endl;
-        }
-    }
+    //// 当只重建时，偏移文件必须存在
+    //if (doReconstruct && !doComputeOffsets) {
+    //    if (!std::filesystem::exists(outOffsetPath)) {
+    //        std::cerr << "Offsets file not found (required for reconstruction): " << outOffsetPath << std::endl;
+    //        return 1;
+    //    }
+    //}
 
-    if (doReconstruct) {
-        // ensure offsets exist
-        if (!std::filesystem::exists(outOffsetPath)) {
-            std::cerr << "Offsets file not found for reconstruction: " << outOffsetPath << std::endl;
-            return 1;
-        }
-        // only attempt reconstruction if compute succeeded or compute was skipped
-        if (computeOk) {
-            bool recOk = RSTools_ReconstructFromOffsets(outOffsetPath.c_str(), lpath.c_str(), reconPath.c_str(), 2048, 2048);
-            if (!recOk) {
-                std::cerr << "Reconstruction from offsets failed" << std::endl;
-            } else {
-                std::cout << "重建影像生成成功: " << reconPath << std::endl;
-            }
-        }
-    }
+    //bool computeOk = true;
+    //if (doComputeOffsets) {
+    //    computeOk = calculateOffsetsAndSave(lpath, rpath, outOffsetPath, blockSize);
+    //    if (!computeOk) {
+    //        std::cerr << "computeOffsetsAndSave failed" << std::endl;
+    //    }
+    //}
+
+    //if (doReconstruct) {
+    //    // ensure offsets exist
+    //    if (!std::filesystem::exists(outOffsetPath)) {
+    //        std::cerr << "Offsets file not found for reconstruction: " << outOffsetPath << std::endl;
+    //        return 1;
+    //    }
+    //    // only attempt reconstruction if compute succeeded or compute was skipped
+    //    if (computeOk) {
+    //        bool recOk = RSTools_ReconstructFromOffsets(outOffsetPath.c_str(), lpath.c_str(), reconPath.c_str(), reconBlockSize, reconBlockSize);
+    //        if (!recOk) {
+    //            std::cerr << "Reconstruction from offsets failed" << std::endl;
+    //        } else {
+    //            std::cout << "重建影像生成成功: " << reconPath << std::endl;
+    //            // build overviews for the reconstructed file
+    //            buildOverviews(reconPath);
+    //        }
+    //    }
+    //}
 
     std::cout << "---- 完成 ----\n";
     return 0;
