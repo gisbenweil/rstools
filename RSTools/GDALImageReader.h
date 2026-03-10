@@ -29,3 +29,5 @@ RSTOOLS_API void RSTools_DestroyImageInfo(ImageInfo* info);
 // 支持 resampleMethod: "nearest", "bilinear", "cubic"（不区分大小写）
 // 注意：这是 C++ 链接（mangled 名称），用于在 C++ 代码中调用重载版本。原 extern "C" 的接口保持不变以兼容已有二进制调用。
 RSTOOLS_API ReadResult* RSTools_ReadImage(const char* path, int x, int y, int width, int height, int outWidth, int outHeight, const char* resampleMethod);
+
+

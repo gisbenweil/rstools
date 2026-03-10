@@ -1,5 +1,6 @@
 ﻿#include "GDALImageReader.h"
 #include <gdal_priv.h>
+#include <cpl_error.h>
 #include <cpl_conv.h> // CPLMalloc, CSLCount
 #include <memory>
 #include <cstring>
@@ -8,6 +9,7 @@
 extern "C" {
 
 RSTOOLS_API void RSTools_Initialize() {
+    
     CPLSetConfigOption("GDAL_FILENAME_IS_UTF8", "NO");
     GDALAllRegister();
 }

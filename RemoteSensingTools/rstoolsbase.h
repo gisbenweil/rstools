@@ -2,6 +2,8 @@
 #include <opencv2/opencv.hpp>
 #include <GDALImageBase.h>
 using namespace cv;
+using namespace std;
+
 // 双线性采样（输入为 single-channel CV_32F 图像）
 static float bilinearSample(const cv::Mat& img, double x, double y)
 {
@@ -27,6 +29,18 @@ static float bilinearSample(const cv::Mat& img, double x, double y)
 	return v0 * (1.0f - dy) + v1 * dy;
 }
 
+
+static string formatDurationStr(double &secs) {
+	int s = static_cast<int>(std::round(std::max(0.0, secs)));
+	int h = s / 3600;
+	int m = (s % 3600) / 60;
+	int ss = s % 60;
+	std::ostringstream oss;
+	if (h > 0) oss << h << "h";
+	if (m > 0 || h > 0) oss << m << "m";
+	oss << ss << "s";
+	return oss.str();
+}
 static Mat convertTo8Bit(const void* data, int width, int height,
 	ImageDataType dataType,
 	double minVal = NAN, double maxVal = NAN) {

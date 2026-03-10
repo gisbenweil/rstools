@@ -11,6 +11,8 @@
 #include "../RSTools/ImageBlockWriter.h"
 #include <string>
 
+using namespace std;
+
 enum InterpMethod {
 	INTERP_TPS_GLOBAL,
 	INTERP_IDW_LOCAL,
@@ -54,6 +56,8 @@ struct SparseOpticalFlowResult {
 
 // 辅助函数：将ReadResult转换为OpenCV Mat
 cv::Mat convertToCVMat(const ReadResult& result, int bandIndex = 0);
+void buildOverviews(const std::string& path);
+bool calculateOffsetsAndSave(string lpath, string rpath, string outOffsetPath, int blockSize);
 
 cv::Mat toFloatMat(const ReadResult* res, int bandIndex = 0);
 std::vector<cv::Point2f> detectHybridFeatures(const cv::Mat& gray);
