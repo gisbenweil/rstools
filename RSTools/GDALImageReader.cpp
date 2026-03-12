@@ -9,6 +9,7 @@
 extern "C" {
 
 RSTOOLS_API void RSTools_Initialize() {
+    CPLSetConfigOption("PROJ_LIB", "proj9/share/");
     
     CPLSetConfigOption("GDAL_FILENAME_IS_UTF8", "NO");
     GDALAllRegister();
